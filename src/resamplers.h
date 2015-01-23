@@ -6,7 +6,7 @@ extern "C" {
 
 #include <stdint.h>
 
-typedef uint8_t TPixel; /* Note (3) */
+typedef uint16_t TPixel; /* Note (3) */
 
 struct resampler {
     void *ctx;

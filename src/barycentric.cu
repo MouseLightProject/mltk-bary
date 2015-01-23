@@ -371,7 +371,7 @@ int BarycentricGPUresample(struct resampler * const self,
 
     struct work arg={0};
     ctx_t * const c=(ctx_t*)self->ctx;
-    printf("sizeof work: %d\n",(int)sizeof(arg));
+    //printf("sizeof work: %d\n",(int)sizeof(arg));
     arg.dst=c->dst;
     memcpy(arg.dst_shape,c->dst_shape,sizeof(arg.dst_shape));
     memcpy(arg.src_shape,c->src_shape,sizeof(arg.dst_shape));
