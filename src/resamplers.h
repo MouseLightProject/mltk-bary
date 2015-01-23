@@ -12,35 +12,44 @@ struct resampler {
     void *ctx;
 };
 
-struct resampler_api {
-    /* See Notes (1,4) */
-    int (*init)(struct resampler* self,
-                const unsigned * const src_shape,
-                const unsigned * const dst_shape,
-                const unsigned ndim
-               );
-    int (*source)(struct resampler * self,
-                  TPixel * const src);
-    int (*destination)(struct resampler *self,
-                       TPixel * const dst);
-    int (*result)(const struct resampler * const self,
-                  TPixel * const dst);
-    int(*resample)(struct resampler * const self,
-                    const float * const cubeverts  /* corners of 3d rectangular prism */
-                    );
-    void (*release)(struct resampler *self);
+int BarycentricCPUinit(struct resampler*,
+                const unsigned * const,
+                const unsigned * const,
+                const unsigned);
+int BarycentricCPUsource(const struct resampler *,
+                  TPixel * const);
+int BarycentricCPUdestination(struct resampler *,
+                       TPixel * const);
+int BarycentricCPUresult(const struct resampler * const,
+                  TPixel * const);
+int BarycentricCPUresample(struct resampler * const,
+                    const float * const);
+void BarycentricCPUrelease(struct resampler *);
+void BarycentricCPUuseReporters( void (*)  (const char*, const char*, const char*, int, const char*,void*),
+                          void (*)(const char*, const char*, const char*, int, const char*,void*),
+                          void (*)   (const char*, const char*, const char*, int, const char*,void*),
+                          void *);
+int BarycentricCPUrunTests(void);
 
-    void (*useReporters)( void (*error)  (const char* msg, const char* expr, const char* file, int line, const char* function,void* usr),
-                          void (*warning)(const char* msg, const char* expr, const char* file, int line, const char* function,void* usr),
-                          void (*info)   (const char* msg, const char* expr, const char* file, int line, const char* function,void* usr),
-                          void *usr
-                        );
-    int  (*runTests)(void); /* See Note (2) */
-};
 
-extern const struct resampler_api BarycentricGPU; /* See Note (4) */
-extern const struct resampler_api BarycentricCPU;
-
+int BarycentricGPUinit(struct resampler*,
+                const unsigned * const,
+                const unsigned * const,
+                const unsigned);
+int BarycentricGPUsource(struct resampler*,
+                  TPixel * const);
+int BarycentricGPUdestination(struct resampler *,
+                       TPixel * const);
+int BarycentricGPUresult(const struct resampler * const,
+                  TPixel * const);
+int BarycentricGPUresample(struct resampler * const,
+                    const float * const);
+void BarycentricGPUrelease(struct resampler *);
+void BarycentricGPUuseReporters( void (*)  (const char*, const char*, const char*, int, const char*,void*),
+                          void (*)(const char*, const char*, const char*, int, const char*,void*),
+                          void (*)   (const char*, const char*, const char*, int, const char*,void*),
+                          void *);
+int  BarycentricGPUrunTests(void);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -152,7 +152,7 @@ struct ctx {
     unsigned src_strides[4],dst_strides[4];
 };
 
-static int init(struct resampler* self,
+int BarycentricCPUinit(struct resampler* self,
                 const unsigned * const src_shape,
                 const unsigned * const dst_shape,
                 const unsigned ndim
@@ -177,7 +177,7 @@ static int init(struct resampler* self,
     return 1;
 }
 
-static void release(struct resampler *self) {
+void BarycentricCPUrelease(struct resampler *self) {
     if(self->ctx) {
         struct ctx * c=self->ctx;
         free(c->dst);
@@ -187,7 +187,7 @@ static void release(struct resampler *self) {
 }
 
 
-static int source(const struct resampler * self,
+int BarycentricCPUsource(const struct resampler * self,
                   TPixel * const src)
 {
     struct ctx * const ctx=self->ctx;
@@ -195,14 +195,14 @@ static int source(const struct resampler * self,
     return 1;
 }
 
-static int destination(struct resampler *self,
+int BarycentricCPUdestination(struct resampler *self,
                        TPixel * const dst){
     struct ctx * const c=self->ctx;
     memcpy(c->dst,dst,c->dst_strides[3]*sizeof(TPixel));
     return 1;
  }
 
-static int result(const struct resampler * const self,
+int BarycentricCPUresult(const struct resampler * const self,
                   TPixel * const dst)
 {
     struct ctx * const ctx=self->ctx;
@@ -297,7 +297,7 @@ static void worker(void *param) {
 
 #include <thread.h>
 
-static int resample(struct resampler * const self,
+int BarycentricCPUresample(struct resampler * const self,
                      const float * const cubeverts) {
     /* Approach
 
@@ -336,20 +336,6 @@ static int resample(struct resampler * const self,
     for(i=0;i<NTHREADS;++i) thread_release(ts+i);
     return 1;
 }
-
-static int runTests(void);
-
-const struct resampler_api BarycentricCPU = {
-    init,
-    source,
-    destination,
-    result,
-    resample,
-    release,
-    useReporters,
-    runTests
-};
-
 
 /* Internal testing */
 
@@ -434,7 +420,7 @@ static int (*tests[])(void)={
     test_idx2coord,
 };
 
-static int runTests() {
+int BarycentricCPUrunTests() {
     int i;
     int nfailed=0;
     for(i=0;i<countof(tests);++i) {

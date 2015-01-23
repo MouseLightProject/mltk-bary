@@ -5,6 +5,6 @@
 #define ASSERT(e) do{if(!(e)) {printf("%s(%d): %s()(\n\tExpression evaluated as false.\n\t%s\n",__FILE__,__LINE__,__FUNCTION__,#e); exit(1); }}while(0)
 
 int main(int argc,char*argv[]) {
-    ASSERT(0==BarycentricCPU.runTests());
+    ASSERT(0==BarycentricCPUrunTests());
     return 0;
 }

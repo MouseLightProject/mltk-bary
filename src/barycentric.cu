@@ -32,7 +32,7 @@ static reporter_t error_  =&default_reporter;
 static reporter_t warning_=&default_reporter;
 static reporter_t info_   =&default_reporter;
 
-static void useReporters(
+void BarycentricGPUuseReporters(
     void (*error)  (const char* msg, const char* expr, const char* file, int line, const char* function,void* usr),
     void (*warning)(const char* msg, const char* expr, const char* file, int line, const char* function,void* usr),
     void (*info)   (const char* msg, const char* expr, const char* file, int line, const char* function,void* usr),
@@ -102,7 +102,7 @@ struct work {
     struct tetrahedron tetrads[5];
 };
 
-static int init(struct resampler* self,
+int BarycentricGPUinit(struct resampler* self,
                 const unsigned * const src_shape,
                 const unsigned * const dst_shape,
                 const unsigned ndim) {
@@ -135,7 +135,7 @@ static int init(struct resampler* self,
     return 1;
 }
 
-static void release(struct resampler* self) {
+void BarycentricGPUrelease(struct resampler* self) {
     try {
         if(self->ctx) {
             ctx_t *c=(ctx_t*)self->ctx;
@@ -148,7 +148,7 @@ static void release(struct resampler* self) {
     catch(...) {;}
 }
 
-static int upload_src(struct resampler* self,TPixel * const src) {
+int BarycentricGPUsource(struct resampler* self,TPixel * const src) {
     try {
         ctx_t *c=(ctx_t*)self->ctx;
 
@@ -171,7 +171,7 @@ static int upload_src(struct resampler* self,TPixel * const src) {
     return 1;
 }
 
-static int upload_dst(struct resampler* self,TPixel * const dst) {
+int BarycentricGPUdestination(struct resampler* self,TPixel * const dst) {
     try {
         ctx_t *c=(ctx_t*)self->ctx;
         CUTRY(cudaMemcpy(c->dst,dst,sizeof(TPixel)*prod(c->dst_shape,3),cudaMemcpyHostToDevice));
@@ -181,7 +181,7 @@ static int upload_dst(struct resampler* self,TPixel * const dst) {
     return 1;
 }
 
-static int download(const struct resampler* self, TPixel * const dst) {
+int BarycentricGPUresult(const struct resampler* self, TPixel * const dst) {
     try {
         ctx_t *ctx=(ctx_t*)self->ctx;
         CUTRY(cudaMemcpy(dst,ctx->dst,sizeof(TPixel)*prod(ctx->dst_shape,3),cudaMemcpyDeviceToHost));
@@ -366,7 +366,7 @@ static unsigned nextdim(unsigned n, unsigned limit, unsigned *rem)
   return argmin;
 }
 
-static int resample(struct resampler * const self,
+int BarycentricGPUresample(struct resampler * const self,
                      const float * const cubeverts) {
 
     struct work arg={0};
@@ -396,19 +396,6 @@ static int resample(struct resampler * const self,
 /*           */
 /* INTERFACE */
 /*           */
-
-static int runTests(void);
-
-extern "C" const struct resampler_api BarycentricGPU = {
-    init,
-    upload_src,
-    upload_dst,
-    download,
-    resample,
-    release,
-    useReporters,
-    runTests
-};
 
 /*       */
 /* TESTS */
@@ -507,7 +494,7 @@ static int (*tests[])(void)={
     test_testrahedron,
 };
 
-static int runTests() {
+int BarycentricGPUrunTests() {
     int i;
     int nfailed=0;
     for(i=0;i<countof(tests);++i) {

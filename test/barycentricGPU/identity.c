@@ -47,12 +47,12 @@ int main(int argc,char* argv[]) {
 
     {
         struct resampler r;
-        TIME(ASSERT( BarycentricGPU.init  (&r,src_shape,dst_shape,3)));
-        TIME(ASSERT( BarycentricGPU.source(&r,src)));
-        TIME(ASSERT( BarycentricGPU.destination(&r,dst)));
-        TIME(ASSERT( BarycentricGPU.resample(&r,cube)));
-        TIME(ASSERT( BarycentricGPU.result(&r,dst)));
-                     BarycentricGPU.release(&r);
+        TIME(ASSERT( BarycentricGPUinit  (&r,src_shape,dst_shape,3)));
+        TIME(ASSERT( BarycentricGPUsource(&r,src)));
+        TIME(ASSERT( BarycentricGPUdestination(&r,dst)));
+        TIME(ASSERT( BarycentricGPUresample(&r,cube)));
+        TIME(ASSERT( BarycentricGPUresult(&r,dst)));
+                     BarycentricGPUrelease(&r);
     }
 
 #if 1

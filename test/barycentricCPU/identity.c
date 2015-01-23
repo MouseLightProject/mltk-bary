@@ -46,12 +46,12 @@ int main(int argc,char* argv[]) {
 
     {
         struct resampler r;
-        ASSERT( BarycentricCPU.init  (&r,src_shape,dst_shape,3));
-        ASSERT( BarycentricCPU.source(&r,src));
-        ASSERT( BarycentricCPU.destination(&r,dst));
-        ASSERT( BarycentricCPU.resample(&r,cube));
-        ASSERT( BarycentricCPU.result(&r,dst));
-                BarycentricCPU.release(&r);
+        ASSERT( BarycentricCPUinit  (&r,src_shape,dst_shape,3));
+        ASSERT( BarycentricCPUsource(&r,src));
+        ASSERT( BarycentricCPUdestination(&r,dst));
+        ASSERT( BarycentricCPUresample(&r,cube));
+        ASSERT( BarycentricCPUresult(&r,dst));
+                BarycentricCPUrelease(&r);
     }
 
 #if 1
