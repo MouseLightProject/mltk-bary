@@ -5,6 +5,7 @@
 #include <tictoc.h>
 
 #define ASSERT(e) do{if(!(e)) {printf("%s(%d): %s()(\n\tExpression evaluated as false.\n\t%s\n",__FILE__,__LINE__,__FUNCTION__,#e); exit(1); }}while(0)
+#define TIME(e)    do{TicTocTimer t=tic(); {e;} printf("TIME %10fs\t%s\n",toc(&t),#e);} while(0)
 #define countof(e) (sizeof(e)/sizeof(*(e)))
 
 static unsigned eq(const TPixel * const a, const TPixel * const b,unsigned n) {
@@ -84,15 +85,15 @@ int main(int argc,char* argv[]) {
 
     {
         struct resampler r;
-        ASSERT( BarycentricCPUinit  (&r,src_shape,dst_shape,3));
-        ASSERT( BarycentricCPUsource(&r,src));
-        ASSERT( BarycentricCPUdestination(&r,dst));
+        TIME(ASSERT( BarycentricCPUinit  (&r,src_shape,dst_shape,3)));
+        TIME(ASSERT( BarycentricCPUsource(&r,src)));
+        TIME(ASSERT( BarycentricCPUdestination(&r,dst)));
 
-        TicTocTimer t=tic();
-        ASSERT( BarycentricCPUresample(&r,cube));
-        printf("TIME %fs\n",toc(&t));
+        //TicTocTimer t=tic();
+        TIME(ASSERT( BarycentricCPUresample(&r,cube)));
+        //printf("TIME %fs\n",toc(&t));
 
-        ASSERT( BarycentricCPUresult(&r,dst));
+        TIME(ASSERT( BarycentricCPUresult(&r,dst)));
                 BarycentricCPUrelease(&r);
     }
 
