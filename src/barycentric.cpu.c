@@ -162,14 +162,14 @@ int BarycentricCPUinit(struct resampler* self,
     ASSERT(self->ctx=(struct ctx*)malloc(sizeof(struct ctx)));
     {
         struct ctx * const c=self->ctx;
-        memset(c,0,sizeof(*c));
+        //memset(c,0,sizeof(*c));
         memcpy(c->src_shape,src_shape,sizeof(c->src_shape));
         cumprod(c->src_strides,src_shape,3);
         // src just ref'd: no alloc
     }
     {
         struct ctx * const c=self->ctx;
-        memset(c,0,sizeof(*c));
+        //memset(c,0,sizeof(*c));
         memcpy(c->dst_shape,dst_shape,sizeof(c->dst_shape));
         cumprod(c->dst_strides,dst_shape,3);
         ASSERT(c->dst=(TPixel*)malloc(c->dst_strides[3]*sizeof(TPixel)));
