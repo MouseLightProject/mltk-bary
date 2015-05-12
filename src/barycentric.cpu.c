@@ -2,6 +2,7 @@
 #include <matrix.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include<stdio.h>
 static void default_reporter(const char* msg, const char* expr, const char* file, int line, const char* function,void* usr) {
@@ -244,19 +245,21 @@ struct work {
 
     struct tetrahedron * tetrads;
     int id;
+    int method;
 };
 
 static void worker(void *param) {
     const struct work * const work=(struct work *)(param);
 
     {
-        TPixel * const restrict dst                         =work->dst;;
+        TPixel * const restrict dst                         =work->dst;
         const unsigned * const restrict dst_shape           =work->dst_shape;
         const unsigned * const restrict dst_strides         =work->dst_strides;
         TPixel * const restrict src                         =work->src;
         const unsigned * const restrict src_shape           =work->src_shape;
         const unsigned * const restrict src_strides         =work->src_strides;
         const struct tetrahedron * const restrict tetrads   =work->tetrads;
+        const int method   =work->method;
 
         unsigned idst;
         for(idst=work->id;idst<prod(dst_shape,3);idst+=NTHREADS) {
@@ -275,20 +278,55 @@ static void worker(void *param) {
 
             // Map source index
             {
-                unsigned idim,ilambda,isrc=0;
-                for(idim=0;idim<3;++idim) {
+                if(method==0) { //  nathan's original nearest neighbor
+                  unsigned idim,ilambda,isrc=0;
+                  for(idim=0;idim<3;++idim) {
+                      float s=0.0f;
+                      const float d=(float)(src_shape[idim]);
+                      for(ilambda=0;ilambda<4;++ilambda) {
+                          const float      w=lambdas[ilambda];
+                          const unsigned idx=indexes[itetrad][ilambda];
+                          s+=w*BIT(idx,idim);
+                      }
+                      s*=d;
+                      s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
+                      isrc+=src_strides[idim]*((unsigned)s); // important to floor here.  can't change order of sums
+                  }
+                  dst[idst]=src[isrc]; }
+
+                else if(method==1) { // ben's trilinear
+                  float frac[3],tmp,c00,c10,c01,c11,c0,c1;
+                  unsigned zero[3],one[3];
+                  unsigned idim,ilambda;
+                  for(idim=0;idim<3;++idim) {
                     float s=0.0f;
                     const float d=(float)(src_shape[idim]);
                     for(ilambda=0;ilambda<4;++ilambda) {
-                        const float      w=lambdas[ilambda];
-                        const unsigned idx=indexes[itetrad][ilambda];
-                        s+=w*BIT(idx,idim);
-                    }
+                      const float      w=lambdas[ilambda];
+                      const unsigned idx=indexes[itetrad][ilambda];
+                      s+=w*BIT(idx,idim); }
                     s*=d;
                     s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
-                    isrc+=src_strides[idim]*((unsigned)s); // important to floor here.  can't change order of sums
-                }
-                dst[idst]=src[isrc];
+                    frac[idim] = modff(s,&tmp);
+                    zero[idim]=(unsigned)tmp;
+                    one[idim]=zero[idim]+1; }
+                  if(zero[0]>=src_shape[0] || zero[1]>=src_shape[1] || zero[2]>=src_shape[2]) continue;
+                  if(one[0]>=src_shape[0]) one[0]--;  // otherwise pixels are black at edges, not sure why
+                  if(one[1]>=src_shape[1]) one[1]--;
+                  if(one[2]>=src_shape[2]) one[2]--;
+                  tmp = (1.0f-frac[0]);
+                  c00 = src[zero[0]*src_strides[0]+zero[1]*src_strides[1]+zero[2]*src_strides[2]]*tmp
+                      + src[ one[0]*src_strides[0]+zero[1]*src_strides[1]+zero[2]*src_strides[2]]*frac[0];
+                  c10 = src[zero[0]*src_strides[0]+ one[1]*src_strides[1]+zero[2]*src_strides[2]]*tmp
+                      + src[ one[0]*src_strides[0]+ one[1]*src_strides[1]+zero[2]*src_strides[2]]*frac[0];
+                  c01 = src[zero[0]*src_strides[0]+zero[1]*src_strides[1]+ one[2]*src_strides[2]]*tmp
+                      + src[ one[0]*src_strides[0]+zero[1]*src_strides[1]+ one[2]*src_strides[2]]*frac[0];
+                  c11 = src[zero[0]*src_strides[0]+ one[1]*src_strides[1]+ one[2]*src_strides[2]]*tmp
+                      + src[ one[0]*src_strides[0]+ one[1]*src_strides[1]+ one[2]*src_strides[2]]*frac[0];
+                  tmp = (1.0f-frac[1]);
+                  c0 = c00*tmp + c10*frac[1];
+                  c1 = c01*tmp + c11*frac[1];
+                  dst[idst] = c0*(1.0f-frac[2]) + c1*frac[2]; }
             }
 
         }
@@ -298,7 +336,8 @@ static void worker(void *param) {
 #include <thread.h>
 
 int BarycentricCPUresample(struct resampler * const self,
-                     const float * const cubeverts) {
+                     const float * const cubeverts,
+                     const int method) {
     /* Approach
 
     1. Build tetrahedra from cube vertices
@@ -328,7 +367,7 @@ int BarycentricCPUresample(struct resampler * const self,
 
     for(i=0;i<NTHREADS;++i)
     {
-        const struct work job={dst,dst_shape,dst_strides,src,src_shape,src_strides,tetrads,i};
+        const struct work job={dst,dst_shape,dst_strides,src,src_shape,src_strides,tetrads,i,method};
         jobs[i]=job;
         ts[i]=thread_create(worker,jobs+i);
     }

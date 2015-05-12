@@ -30,7 +30,7 @@ const unsigned dst_stride[]={1,NX,NX*NY};
 
 #define s (0.5f)
 
-#if 1 
+#if 0 
     // 30 degrees
     #define sn (0.5f)
     #define cs (0.866f)
@@ -84,13 +84,20 @@ int main(int argc,char* argv[]) {
     }
 
     {
+int i,j;
+for(i=0;i<8;i++) {
+for(j=0;j<3;j++) {
+printf("%f ",cube[i*3+j]);
+}
+printf("\n");
+}
         struct resampler r;
         TIME(ASSERT( BarycentricCPUinit  (&r,src_shape,dst_shape,3)));
         TIME(ASSERT( BarycentricCPUsource(&r,src)));
         TIME(ASSERT( BarycentricCPUdestination(&r,dst)));
 
         //TicTocTimer t=tic();
-        TIME(ASSERT( BarycentricCPUresample(&r,cube)));
+        TIME(ASSERT( BarycentricCPUresample(&r,cube,0)));
         //printf("TIME %fs\n",toc(&t));
 
         TIME(ASSERT( BarycentricCPUresult(&r,dst)));
