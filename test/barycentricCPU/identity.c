@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>  
 #include <nd.h>
+#include <math.h>
 
 #define ASSERT(e) do{if(!(e)) {printf("%s(%d): %s()(\n\tExpression evaluated as false.\n\t%s\n",__FILE__,__LINE__,__FUNCTION__,#e); exit(1); }}while(0)
 #define countof(e) (sizeof(e)/sizeof(*(e)))
@@ -38,9 +39,9 @@ int main(int argc,char* argv[]) {
 
     {
 
-        unsigned x,y,z,i=0;
+        unsigned x,y,z,i=0,scale=(8*sizeof(TPixel)-(int)log2(64));
         for(z=0;z<64;++z) for(y=0;y<64;++y) for(x=0;x<64;++x,++i) {
-            src[i]=(x/3)^(y/3)^(z/3);
+            src[i]=((x/3)^(y/3)^(z/3))<<scale;
         }
     }
 
@@ -58,12 +59,12 @@ int main(int argc,char* argv[]) {
     ndioAddPluginPath("plugins");
     {   
         const size_t shape_sz[]={64,64,64};
-        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u8),3,shape_sz),src,nd_static);
+        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u16),3,shape_sz),src,nd_static);
         ndioClose(ndioWrite(ndioOpen("src.tif",NULL,"w"),v));
     }
     {
         const size_t shape_sz[]={64,64,64};
-        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u8),3,shape_sz),dst,nd_static);
+        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u16),3,shape_sz),dst,nd_static);
         ndioClose(ndioWrite(ndioOpen("dst.tif",NULL,"w"),v));
     }
 #endif

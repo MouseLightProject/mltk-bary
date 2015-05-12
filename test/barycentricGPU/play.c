@@ -3,6 +3,7 @@
 #include <stdlib.h>  
 #include <nd.h>
 #include <tictoc.h>
+#include <math.h>
 
 #define ASSERT(e)  do{if(!(e)) {printf("%s(%d): %s()(\n\tExpression evaluated as false.\n\t%s\n",__FILE__,__LINE__,__FUNCTION__,#e); exit(1); }}while(0)
 #define TIME(e)    do{TicTocTimer t=tic(); {e;} printf("TIME %10fs\t%s\n",toc(&t),#e);} while(0)
@@ -76,9 +77,9 @@ int main(int argc,char* argv[]) {
 
     {
 
-        unsigned x,y,z,i=0;
+        unsigned x,y,z,i=0,scale=(8*sizeof(TPixel)-(int)log2(NX));
         for(z=0;z<NZ;++z) for(y=0;y<NY;++y) for(x=0;x<NX;++x,++i) {
-            src[i]=(x)^(y)^(z);
+            src[i]=((x)^(y)^(z))<<scale;
         }
 
     }
@@ -98,12 +99,12 @@ int main(int argc,char* argv[]) {
     ndioAddPluginPath("plugins");
     {   
         const size_t shape_sz[]={NX,NY,NZ};
-        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u8),3,shape_sz),src,nd_static);
+        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u16),3,shape_sz),src,nd_static);
         ndioClose(ndioWrite(ndioOpen("src.tif",NULL,"w"),v));
     }
     {
         const size_t shape_sz[]={NX,NY,NZ};
-        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u8),3,shape_sz),dst,nd_static);
+        nd_t v=ndref(ndreshape(ndcast(ndinit(),nd_u16),3,shape_sz),dst,nd_static);
         ndioClose(ndioWrite(ndioOpen("dst.tif",NULL,"w"),v));
     }
 #endif
