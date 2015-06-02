@@ -91,7 +91,7 @@ int main(int argc,char* argv[]) {
         TIME(ASSERT( BarycentricCPUdestination(&r,dst)));
 
         //TicTocTimer t=tic();
-        TIME(ASSERT( BarycentricCPUresample(&r,cube,0)));
+        TIME(ASSERT( BarycentricCPUresample(&r,cube,90,1)));  // iterate manually over (&4,cube,[0,90],[0,1])
         //printf("TIME %fs\n",toc(&t));
 
         TIME(ASSERT( BarycentricCPUresult(&r,dst)));

@@ -50,7 +50,7 @@ int main(int argc,char* argv[]) {
         ASSERT( BarycentricCPUinit  (&r,src_shape,dst_shape,3));
         ASSERT( BarycentricCPUsource(&r,src));
         ASSERT( BarycentricCPUdestination(&r,dst));
-        ASSERT( BarycentricCPUresample(&r,cube,0));
+        ASSERT( BarycentricCPUresample(&r,cube,0,0));  // iterate manually over (&4,cube,[0,90],[0,1])
         ASSERT( BarycentricCPUresult(&r,dst));
                 BarycentricCPUrelease(&r);
     }

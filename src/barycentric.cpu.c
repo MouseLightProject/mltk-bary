@@ -214,13 +214,22 @@ int BarycentricCPUresult(const struct resampler * const self,
 /* THE CRUX */
 
 /* 4 indexes each for 5 tetrads; the first is the center tetrad */
-static const unsigned indexes[5][4]={
+static const unsigned indexes0[5][4]={
         {1,2,4,7},
         {2,4,6,7}, // opposite 1
         {1,4,5,7}, // opposite 2
         {1,2,3,7}, // opposite 4
         {0,1,2,4}  // opposite 7
 };
+// the orthogonal way to arrange the tetrads
+static const unsigned indexes90[5][4]={
+        {0,3,5,6},
+        {3,5,6,7}, // opposite 0
+        {0,4,5,6}, // opposite 3
+        {0,2,3,6}, // opposite 5
+        {0,1,3,5}  // opposite 6
+};
+static unsigned (*indexes)[5][4];
 
 /**
     @param cubeverts [in]   An array of floats ordered like float[8][3].
@@ -285,7 +294,7 @@ static void worker(void *param) {
                       const float d=(float)(src_shape[idim]);
                       for(ilambda=0;ilambda<4;++ilambda) {
                           const float      w=lambdas[ilambda];
-                          const unsigned idx=indexes[itetrad][ilambda];
+                          const unsigned idx=(*indexes)[itetrad][ilambda];
                           s+=w*BIT(idx,idim);
                       }
                       s*=d;
@@ -303,7 +312,7 @@ static void worker(void *param) {
                     const float d=(float)(src_shape[idim]);
                     for(ilambda=0;ilambda<4;++ilambda) {
                       const float      w=lambdas[ilambda];
-                      const unsigned idx=indexes[itetrad][ilambda];
+                      const unsigned idx=(*indexes)[itetrad][ilambda];
                       s+=w*BIT(idx,idim); }
                     s*=d;
                     s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
@@ -337,6 +346,7 @@ static void worker(void *param) {
 
 int BarycentricCPUresample(struct resampler * const self,
                      const float * const cubeverts,
+                     const int orientation,
                      const int method) {
     /* Approach
 
@@ -362,8 +372,10 @@ int BarycentricCPUresample(struct resampler * const self,
     const unsigned * const restrict src_shape   = ctx->src_shape;
     const unsigned * const restrict src_strides = ctx->src_strides;
 
+    indexes = orientation==0 ? &indexes0 : &indexes90;
+
     for(i=0;i<5;i++)
-        tetrahedron(tetrads+i,cubeverts,indexes[i]); // TODO: VERIFY the indexing on "indexes" works correctly here
+        tetrahedron(tetrads+i,cubeverts,(*indexes)[i]); // TODO: VERIFY the indexing on "indexes" works correctly here
 
     for(i=0;i<NTHREADS;++i)
     {

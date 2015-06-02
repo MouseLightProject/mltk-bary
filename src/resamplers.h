@@ -24,6 +24,7 @@ int BarycentricCPUresult(const struct resampler * const,
                   TPixel * const);
 int BarycentricCPUresample(struct resampler * const,
                     const float * const,
+                    const int,
                     const int);
 void BarycentricCPUrelease(struct resampler *);
 void BarycentricCPUuseReporters( void (*)  (const char*, const char*, const char*, int, const char*,void*),
