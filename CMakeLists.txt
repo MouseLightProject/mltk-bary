@@ -11,6 +11,7 @@ include(cmake/rpath.cmake)
 find_package(ND)
 include_directories(${ND_INCLUDE_DIRS})
 find_package(CUDA 5.0)
+#;-Xptxas="-v"
 
 file(GLOB_RECURSE SRCS src/*.c src/*.h)
 include_directories(src)
@@ -18,7 +19,8 @@ include_directories(src)
 file(GLOB_RECURSE CUSRCS src/*.cu)
 cuda_compile(CUFILES ${CUSRCS} STATIC
       OPTIONS
-      DEBUG -g;-G;-lineinfo;-Xptxas="-v"
+      DEBUG -g;-G;-lineinfo
+      #DEBUG -g;-G;-lineinfo;-Xptxas="-v"
       RELEASE --use_fast_math
       RELWITHDEBINFO --use_fast_math;-g;-G;-lineinfo
       MINSIZEREL --use_fast_math
