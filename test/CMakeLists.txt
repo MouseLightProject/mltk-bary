@@ -6,6 +6,7 @@ foreach(testset
         math 
         barycentricCPU
         barycentricGPU
+        barycentricAVX
     )
     file(GLOB TESTS ${testset}/*.c)
     foreach(t ${TESTS})

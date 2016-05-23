@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(mltk-barry)
 
-SET( CMAKE_C_FLAGS ${CMAKE_C_FLAGS} -fPIC )
-SET( CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -fPIC )
+SET( CMAKE_C_FLAGS ${CMAKE_C_FLAGS} "-fPIC -mavx2" )
+SET( CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-fPIC -mavx2" )
 
 include(cmake/show.cmake)
 include(cmake/ide.cmake)
@@ -28,6 +28,7 @@ cuda_compile(CUFILES ${CUSRCS} STATIC
 list(APPEND SRCS ${CUFILES})
 
 add_library(engine SHARED ${SRCS})
+target_link_libraries(engine rt)
 
 set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 function(target_add_engine tgt)
