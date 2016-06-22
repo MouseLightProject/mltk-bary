@@ -79,30 +79,35 @@ void map_avx(const struct tetrahedron * const restrict self,
     r10 = _mm256_mul_ps(r1,r10);
     r11 = _mm256_mul_ps(r2,r11);
 
-    r3 = _mm256_add_ps(r3,r4);
-    r6 = _mm256_add_ps(r6,r7);
-    r9 = _mm256_add_ps(r9,r10);
-    r3 = _mm256_add_ps(r3,r5);
-    r6 = _mm256_add_ps(r6,r8);
-    r9 = _mm256_add_ps(r9,r11);
+    //r3 = _mm256_fmadd_ps(r0,r3,r4);
+    //r6 = _mm256_fmadd_ps(r0,r6,r7);
+    //r9 = _mm256_fmadd_ps(r0,r9,r10);
 
+    r3 = _mm256_add_ps(r3,r4);   // lambda[0]
+    r3 = _mm256_add_ps(r3,r5);   // lambda[0]
     _mm256_store_ps(dst[0],r3);
+
+    r6 = _mm256_add_ps(r6,r7);   // lambda[0]
+    r6 = _mm256_add_ps(r6,r8);   // lambda[1]
     _mm256_store_ps(dst[1],r6);
+
+    r9 = _mm256_add_ps(r9,r10);   // lambda[0]
+    r9 = _mm256_add_ps(r9,r11);  // lambda[2]
     _mm256_store_ps(dst[2],r9);
 
     r12 = _mm256_set1_ps(1.0f);
     r12 = _mm256_sub_ps(r12,r3);
     r12 = _mm256_sub_ps(r12,r6);
-    r12 = _mm256_sub_ps(r12,r9);
+    r12 = _mm256_sub_ps(r12,r9); // lambda[3]
     _mm256_store_ps(dst[3],r12);
 }
 
 int main() {
 
   struct tetrahedron tetrads[5];
-  uint64_t i,j,k,n=100000000;
+  uint64_t i,j,k,n=10000000000;
 
-if(1) {
+if(0) {
 
   float r[8][3],lambdas[8][4];
 
@@ -112,20 +117,25 @@ if(1) {
     for(j=0; j<8; j++)
       r[j][i]=(float)(i*j);//rand();
 
+  clock_t start = clock(), diff;
   #pragma nounroll
   for(i=0; i<n; i++) {
     for(j=0; j<8; j++) {
-      map(tetrads,lambdas[j],r[j]); } }
-
+      map(tetrads,lambdas[j],r[j]); 
+    } 
+  }
+  diff = clock() - start;
+  int msec = diff * 1000 / CLOCKS_PER_SEC; 
   i=6;
-  printf("T=\t\t\tori=\tr=\tlambda=\n");
+  printf("CPU: %d\n", msec);
+  printf("T=\t\t\t\t\t\tori=\t\tr=\t\tlambda=\n");
   for(j=0; j<3; j++) {
     for(k=0; k<3; k++)
       printf("%f\t",tetrads[0].T[j*3+k]);
     printf("%f\t",tetrads[0].ori[j]);
-    printf("%f\t",r[j][i]);
-    printf("%f\n",lambdas[j][i]); }
-  printf("\t\t\t\t\t\t\t\t\t\t%f\n",lambdas[3][i]);
+    printf("%f\t",r[i][j]); //since r is inverted here, shouldnt this be?
+    printf("%f\n",lambdas[i][j]); }
+  printf("\t\t\t\t\t\t\t\t\t\t%f\n",lambdas[i][3]); // and here?
 
 } else {
 
@@ -137,12 +147,16 @@ if(1) {
     for(j=0; j<3; j++)
       r[j][i]=(float)(i*j);//rand();
 
+  clock_t start = clock(), diff;
   #pragma nounroll
   for(j=0; j<n; j++) {
     map_avx(tetrads,lambdas,r); }
+  diff = clock() - start;
+  int msec = diff * 1000 / CLOCKS_PER_SEC; 
 
   i=6;
-  printf("T=\t\t\tori=\tr=\tlambda=\n");
+  printf("AVX: %d\n", msec);
+  printf("T=\t\t\t\t\t\tori=\t\tr=\t\tlambda=\n");
   for(j=0; j<3; j++) {
     for(k=0; k<3; k++)
       printf("%f\t",tetrads[0].T[j*3+k]);

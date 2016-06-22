@@ -21,6 +21,7 @@ static reporter_t info_   =&default_reporter;
 #define ERR(e,msg)  error_(msg,#e,__FILE__,__LINE__,__FUNCTION__,reporter_context_)
 #define WARN(e,msg) warning_(msg,#e,__FILE__,__LINE__,__FUNCTION__,reporter_context_)
 #define INFO(e,msg) info_(msg,#e,__FILE__,__LINE__,__FUNCTION__,reporter_context_)
+#define ALIGN __attribute__ ((aligned (32)))
 
 #define ASSERT(e) do{if(!(e)) {ERR(e,"Expression evaluated as false."); return 1; }}while(0)
 
@@ -242,7 +243,7 @@ static unsigned (*indexes)[5][4];
                             Bit 1 is the y dimension, and bit 2 the z dimension.
 */
 
-#define NTHREADS (1)
+#define NTHREADS (6)
 #define NSIMD (8)
 
 struct work {
@@ -259,12 +260,11 @@ struct work {
     int method;
 };
 
-__m256 r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15;
-__m256i ir0,ir1,ir2,ir3,ir4,ir5,ir6,ir7,ir8,ir9,ir10,ir11,ir12,ir13,ir14,ir15;
 
 #include <tictoc.h>
-#define TEST_AVX
-#define ALIGN __attribute__ ((aligned (32)))
+//#define TEST_AVX
+//#define TIME_AVX
+//#define VERBOSE_AVX
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static void worker(void *param) {
@@ -280,361 +280,591 @@ static void worker(void *param) {
         const struct tetrahedron * const restrict tetrads   =work->tetrads;
         const int method   =work->method;
 
-        unsigned idst, idst2, idst_max=prod(dst_shape,3);
-        float r[3],lambdas0[4],lambdas[4];
+        unsigned idst, idst2, idst_max=prod(dst_shape,3); 
+        float r[3],lambdas[4];
         unsigned itetrad, skip_it, check;
         float ALIGN r_avx[3][NSIMD], lambdas_avx[4][NSIMD];
         unsigned ALIGN skip_it_avx[NSIMD];
         unsigned ALIGN itetrad_avx[NSIMD];
+        const float * const T=tetrads->T;
+        const float * const ori=tetrads->ori;
+        const float d1 = 1.0f/dst_shape[0];
+        const float d2 = 1.0f/dst_shape[1]; 
+        const float d3 = 1.0f/dst_shape[2];
+        unsigned n;
+        
+        __m256   r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15;
+        __m256i ir0,ir1,ir2,ir3,ir4,ir5,ir6,ir7,ir8,ir9,ir10,ir11,ir12,ir13,ir14,ir15;
         for(idst=work->id;idst<idst_max;idst+=(NTHREADS*NSIMD)) {
 
-            #ifdef TIME_AVX
-              TicTocTimer t=tic();
-              printf("NULL %10gs\t%s\n",toc(&t),"");
-              t=tic();
-            #endif
 
-            // idx2coord(r,idst,dst_shape);
-            ir0  = _mm256_set_epi32(
-                MIN(idst_max,idst+7),MIN(idst_max,idst+6),MIN(idst_max,idst+5),MIN(idst_max,idst+4),
-                MIN(idst_max,idst+3),MIN(idst_max,idst+2),MIN(idst_max,idst+1),idst);
-            r3  = _mm256_set1_ps((float)(dst_shape[0]));
-            r4  = _mm256_set1_ps((float)(dst_shape[1]));
-            r5  = _mm256_set1_ps((float)(dst_shape[2]));
-            r0   = _mm256_cvtepi32_ps(ir0);
-            r1   = _mm256_div_ps(r0,r3);
-            r2   = _mm256_div_ps(r1,r4);
-            r1   = _mm256_floor_ps(r1);
-            r2   = _mm256_floor_ps(r2);
+           // ECL : == Begin idx2coord ==
 
-            r0   = _mm256_div_ps(r0,r3);
-            r1   = _mm256_div_ps(r1,r4);
-            r2   = _mm256_div_ps(r2,r5);
-            r6   = _mm256_floor_ps(r0);
-            r7   = _mm256_floor_ps(r1);
-            r8   = _mm256_floor_ps(r2);
-            r0   = _mm256_sub_ps(r0,r6);
-            r1   = _mm256_sub_ps(r1,r7);
-            r2   = _mm256_sub_ps(r2,r8);
-            r0   = _mm256_mul_ps(r3,r0);  // r[0]
-            r1   = _mm256_mul_ps(r4,r1);  // r[1]
-            r2   = _mm256_mul_ps(r5,r2);  // r[2]
+	   ir1 = _mm256_set1_epi32(idst_max);
+           // ECL : ir0 is now a register with values n+NSIMD-1, n+NSIMD-2, ... , n+1, n 
+           ir0 = _mm256_set_epi32(idst+7,idst+6,idst+5,idst+4,idst+3,idst+2,idst+1,idst); 
+           // ECL : if n+k overflowed the bounds, round down to idst_max
+           ir0 = _mm256_min_epi32(ir0, ir1);
+           
+           r3  = _mm256_set1_ps((float)(dst_shape[0]));
+           r4  = _mm256_set1_ps((float)(dst_shape[1]));
+           r5  = _mm256_set1_ps((float)(dst_shape[2]));
 
-            // not enough registers for map()
-            _mm256_store_ps(r_avx[0],r0);
-            _mm256_store_ps(r_avx[1],r1);
-            _mm256_store_ps(r_avx[2],r2);
+           // ECL : d1-d3 are divisors that 
+           //     are computed before the loop
+           r13 = _mm256_set1_ps(d1);
+           r14 = _mm256_set1_ps(d2);
+           r15 = _mm256_set1_ps(d3);
+
+           // ECL : We will now do a mod b by calculating a - floor(a/b) * b
+           //     For the first set of calculations,
+           //     a = idst, b = shape[0] 
+
+           r6  = _mm256_cvtepi32_ps(ir0);      // ECL : r6 = a
+           r8  = _mm256_mul_ps(r6, r13);       //       r8 = b
+           r8  = _mm256_floor_ps(r8);          //       r8 = floor(a/b) - kept as r8 
+                                               //    r8 will be "a" in the next set of calculations
+           r7  = _mm256_mul_ps(r8, r3);        //       r7 = b * floor(a/b)
+           ir1 = _mm256_cvtps_epi32(r7);       //       Converting r7 from floats to integers 
+                                               //    in order to combat some rounding errors
+           ir1 = _mm256_sub_epi32(ir0, ir1);   //       ir1 = a - b*floor(a/b)
+
+           // ECL : The floating point division above would still often return off-by-one errors 
+           //     when idst > 16 mil. We therefore manually correct our results. This only seems
+           //     to be neccessary for the first set of equations.
+          
+           ir2 = _mm256_setzero_si256();       // ECL : ir2 = 0
+           ir3 = _mm256_set1_epi32(1);         //       ir3 = 1
+           ir4 = _mm256_cmpgt_epi32(ir2, ir1); //       ir4 holds 1's where a number was negative
+           ir5 = _mm256_and_si256(ir4, ir3);   //       r8 -= 1 where a modulo was negative
+           r8  = _mm256_sub_ps(r8, _mm256_cvtepi32_ps(ir5));
+                                               // ECL : ir1 += b
+           ir6 = _mm256_and_si256(ir4, _mm256_set1_epi32(dst_shape[0]));
+           ir1 = _mm256_add_epi32(ir1, ir6);
+
+           // ECL : Same as above, but check for greater than b
+           ir4 = _mm256_cmpgt_epi32(ir1, _mm256_set1_epi32(dst_shape[0]));
+           ir5 = _mm256_and_si256(ir4, ir3);
+           r8  = _mm256_add_ps(r8, _mm256_cvtepi32_ps(ir5));
+           ir6 = _mm256_and_si256(ir4, _mm256_set1_epi32(dst_shape[0]));
+           ir1 = _mm256_sub_epi32(ir1, ir6);
+
+                                            
+           r0  = _mm256_cvtepi32_ps(ir1);     
+           
+           // ECL : Logic follows the first set of equations, taking floor(a/b) to be the next "a".
+           //     In the first set, we use the saved r8 as "a"
+            
+           r7  = _mm256_mul_ps(r8,r14);
+           r6  = _mm256_floor_ps(r7);
+           r7  = _mm256_mul_ps(r6,r4);
+           ir0 = _mm256_cvtps_epi32(r8);
+           ir1 = _mm256_cvtps_epi32(r7);
+           ir1 = _mm256_sub_epi32(ir0,ir1);
+           r1  =_mm256_cvtepi32_ps(ir1);
+
+           r7  = _mm256_mul_ps(r6,r15);
+           r8  = _mm256_floor_ps(r7);
+           r7  = _mm256_mul_ps(r8,r5);
+           ir0 = _mm256_cvtps_epi32(r6);
+           ir1 = _mm256_cvtps_epi32(r7);
+           ir1 = _mm256_sub_epi32(ir0,ir1);
+           r2  = _mm256_cvtepi32_ps(ir1);
+           
+           // ECL : == End idx2coord ==
+           
+             
+           #ifdef TEST_AVX                     // ECL : Test the avx idx2coord against cpu version
+           
+           _mm256_store_ps(r_avx[0],r0);
+           _mm256_store_ps(r_avx[1],r1);
+           _mm256_store_ps(r_avx[2],r2);
+           for(n=0; n < NSIMD; n++) { 
+              idx2coord(r, MIN(idst_max, idst+n), dst_shape);
+              if(r[0] != r_avx[0][n] ||
+                 r[1] != r_avx[1][n] ||
+                 r[2] != r_avx[2][n]) printf("ERROR: \n\tr     = %i, %i, %i\n\tr_avx = %i, %i, %i\n\n",
+                                                 r[0],       r[1],       r[2],
+                                             r_avx[0][n],r_avx[1][n],r_avx[2][n]);
+           } 
+           #endif
+
+
+           // ECL : == Begin map ==
+
+           r12 = _mm256_set1_ps(ori[0]); // ECL : Loading all variables
+	   r13 = _mm256_set1_ps(ori[1]); 
+	   r14 = _mm256_set1_ps(ori[2]); 
+
+           r3  = _mm256_set1_ps(T[0]);
+           r4  = _mm256_set1_ps(T[1]);
+           r5  = _mm256_set1_ps(T[2]);
+           r6  = _mm256_set1_ps(T[3]);
+           r7  = _mm256_set1_ps(T[4]);
+           r8  = _mm256_set1_ps(T[5]);
+           r9  = _mm256_set1_ps(T[6]);
+           r10 = _mm256_set1_ps(T[7]);
+           r11 = _mm256_set1_ps(T[8]);
+
+           // ECL : r0, r1, and r2 all still contain src[0], src[1], and src[2] respectively
+
+           r12  = _mm256_sub_ps(r0,r12);  // ECL : r0 = src[0]-ori[0]
+           r13  = _mm256_sub_ps(r1,r13); 
+           r14  = _mm256_sub_ps(r2,r14);
+
+           r3  = _mm256_mul_ps(r12,r3);   //       r3 = T[0] * (src[0]-ori[0]) 
+	   r4  = _mm256_mul_ps(r13,r4);   //       r4 = T[1] * (src[1]-ori[1])
+           r3  = _mm256_add_ps(r3,r4);
+           r5  = _mm256_mul_ps(r14,r5);   //       r5 = T[2] * (src[2]-ori[2])
+           r3  = _mm256_add_ps(r3,r5);    //       r3 = r3 + r4 + r5 = lambda[0]
+
+	   r6  = _mm256_mul_ps(r12,r6);   //       r6 = T[3] * (src[0]-ori[0])
+	   r7  = _mm256_mul_ps(r13,r7);   //       r7 = T[4] * (src[1]-ori[1])
+           r6  = _mm256_add_ps(r6,r7);
+	   r8  = _mm256_mul_ps(r14,r8);   //       r8 = T[5] * (src[2]-ori[2])
+           r6  = _mm256_add_ps(r6,r8);    //       lambda[1]
+
+	   r9  = _mm256_mul_ps(r12,r9);   //       r9 = T[6] * (src[0]-ori[0])
+	   r10 = _mm256_mul_ps(r13,r10);  //       r10= T[7] * (src[1]-ori[1])
+           r9  = _mm256_add_ps(r9,r10);  
+           r11 = _mm256_mul_ps(r14,r11);  //       r11= T[8] * (src[2]-ori[2])
+           r9  = _mm256_add_ps(r9,r11);   //       lambda[2]
+           
+           r12 = _mm256_set1_ps(1.0f);
+           r12 = _mm256_sub_ps(r12,r3);
+           r12 = _mm256_sub_ps(r12,r6);
+           r12 = _mm256_sub_ps(r12,r9);   // ECL : r12 = 1.0f - lambdas[0] - lambdas[1] - lambdas[2] = lambda[3] 
+
+           // ECL : == End map ==
+             
             #ifdef TEST_AVX
-              printf("r_avx=%f,%f,%f\n",r_avx[0][0],r_avx[1][0],r_avx[2][0]);
+           _mm256_store_ps(lambdas_avx[0],r3);  
+           _mm256_store_ps(lambdas_avx[1],r6);   
+           _mm256_store_ps(lambdas_avx[2],r9);  
+
+           _mm256_store_ps(lambdas_avx[3],r12);
+            for(n=0;n<NSIMD;n++) {
+              r[0] = r_avx[0][n];
+              r[1] = r_avx[1][n];
+              r[2] = r_avx[2][n];
+              map(tetrads, lambdas, r);
+              if(lambdas[0] != lambdas_avx[0][n] ||
+                 lambdas[1] != lambdas_avx[1][n] ||
+                 lambdas[2] != lambdas_avx[2][n] ||
+                 lambdas[3] != lambdas_avx[3][n]) 
+                 printf("ERROR: \n\t\t\t\t\tlambdas     =  %.10f,  %.10f,  %.10f,  %.10f\n\
+                                  \tlambdas_avx =  %.10f,  %.10f,  %.10f,  %.10f\n\
+                                  \tdiff        =  %.10f,  %.10f,  %.10f,  %.10f\n\n",
+                             lambdas[0],       lambdas[1],       lambdas[2],       lambdas[3],
+                         lambdas_avx[0][n],lambdas_avx[1][n],lambdas_avx[2][n],lambdas_avx[3][n],
+                         lambdas[0]-lambdas_avx[0][n],
+                         lambdas[1]-lambdas_avx[1][n],
+                         lambdas[2]-lambdas_avx[2][n],
+                         lambdas[3]-lambdas_avx[3][n]);
+            }
             #endif
+             
 
-            // map(tetrads,lambdas,r);             // Map center tetrahedron
-            const float * const T=tetrads->T;
-            const float * const ori=tetrads->ori;
+            // ECL : == Begin find_best_tetrad ==
+ 
+            ir4 = _mm256_set1_epi32(1);             // ECL : Setting first min for n to be 1
 
-            //r0 = _mm256_load_ps(r_avx[0]);
-            //r1 = _mm256_load_ps(r_avx[1]);
-            //r2 = _mm256_load_ps(r_avx[2]);
-            r12 = _mm256_set1_ps(ori[0]);
-            r13 = _mm256_set1_ps(ori[1]);
-            r14 = _mm256_set1_ps(ori[2]);
+            r5  = _mm256_cmp_ps(r6,r3,_CMP_LT_OQ);  // ECL : r5[n] should now either be 1's wherever
+                                                    //    lambda[1][n] < lambda[0][n], else 0's
+            r15 = _mm256_min_ps(r6,r3);             //       r15 = min of lambda[1] and lambda[0]
+            ir5 = _mm256_castps_si256(r5);        
+            ir7 = _mm256_set1_epi32(2);             // ECL : ir7 = a register of ints = 2
+            ir5 = _mm256_and_si256(ir5,ir7);        //       ir5[n] = 2 if lambda[1][n] < lambda[0][n], or else 0
+            ir4 = _mm256_max_epi32(ir4,ir5);        //       Because of the order we are going in (1 to 4), 
+                                                    //    we want the largest numbers. (ie if ir4[n] initialy 
+                                                    //    had 1 stored, but ir5[n] had 2, this would 
+	                                            //    indicate that lambda[1] had a lower value than lambda[0],
+	                                            //    so we would now store 2 in ir4[n].
 
-            r3  = _mm256_set1_ps(T[0]);
-            r4  = _mm256_set1_ps(T[1]);
-            r5  = _mm256_set1_ps(T[2]);
-            r6  = _mm256_set1_ps(T[3]);
-            r7  = _mm256_set1_ps(T[4]);
-            r8  = _mm256_set1_ps(T[5]);
-            r9  = _mm256_set1_ps(T[6]);
-            r10 = _mm256_set1_ps(T[7]);
-            r11 = _mm256_set1_ps(T[8]);
-
-            r0 = _mm256_sub_ps(r0,r12);
-            r1 = _mm256_sub_ps(r1,r13);
-            r2 = _mm256_sub_ps(r2,r14);
-
-            r3  = _mm256_mul_ps(r0,r3);
-            r4  = _mm256_mul_ps(r1,r4);
-            r5  = _mm256_mul_ps(r2,r5);
-            r6  = _mm256_mul_ps(r0,r6);
-            r7  = _mm256_mul_ps(r1,r7);
-            r8  = _mm256_mul_ps(r2,r8);
-            r9  = _mm256_mul_ps(r0,r9);
-            r10 = _mm256_mul_ps(r1,r10);
-            r11 = _mm256_mul_ps(r2,r11);
-
-            r3 = _mm256_add_ps(r3,r4);
-            r6 = _mm256_add_ps(r6,r7);
-            r9 = _mm256_add_ps(r9,r10);
-            r3 = _mm256_add_ps(r3,r5);   // lambda[0]
-            r6 = _mm256_add_ps(r6,r8);   // lambda[1]
-            r9 = _mm256_add_ps(r9,r11);  // lambda[2]
-
-            r12 = _mm256_set1_ps(1.0f);
-            r12 = _mm256_sub_ps(r12,r3);
-            r12 = _mm256_sub_ps(r12,r6);
-            r12 = _mm256_sub_ps(r12,r9);   // lambda[3]
-            #ifdef TEST_AVX
-              float foo[NSIMD], lambdas0_avx[4];
-              _mm256_storeu_ps(foo,r3);   lambdas0_avx[0]=foo[0];
-              _mm256_storeu_ps(foo,r6);   lambdas0_avx[1]=foo[0];
-              _mm256_storeu_ps(foo,r9);   lambdas0_avx[2]=foo[0];
-              _mm256_storeu_ps(foo,r12);  lambdas0_avx[3]=foo[0];
-              printf("lambda0_avx=%f,%f,%f,%f\n",
-                  lambdas0_avx[0],lambdas0_avx[1],lambdas0_avx[2],lambdas0_avx[3]);
-            #endif
-
-            // itetrad=find_best_tetrad(lambdas);
-            ir4  = _mm256_set1_epi32(1);
-
-            r5 = _mm256_cmp_ps(r6,r3,_CMP_LT_OQ);
-            r15 = _mm256_min_ps(r6,r3);
-            ir5 = _mm256_castps_si256(r5);
-            ir7  = _mm256_set1_epi32(2);
-            ir5 = _mm256_and_si256(ir5,ir7);
-            ir4  = _mm256_max_epi32(ir4,ir5);
-
-            r5 = _mm256_cmp_ps(r9,r15,_CMP_LT_OQ);
+            r5  = _mm256_cmp_ps(r9,r15,_CMP_LT_OQ); // ECL : Same logic as above
             r15 = _mm256_min_ps(r9,r15);
             ir5 = _mm256_castps_si256(r5);
-            ir7  = _mm256_set1_epi32(3);
+            ir7 = _mm256_set1_epi32(3);
             ir5 = _mm256_and_si256(ir5,ir7);
-            ir4  = _mm256_max_epi32(ir4,ir5);
+            ir4 = _mm256_max_epi32(ir4,ir5);
 
-            r5 = _mm256_cmp_ps(r12,r15,_CMP_LT_OQ);
+            r5  = _mm256_cmp_ps(r12,r15,_CMP_LT_OQ);
             r15 = _mm256_min_ps(r12,r15);
             ir5 = _mm256_castps_si256(r5);
-            ir7  = _mm256_set1_epi32(4);
+            ir7 = _mm256_set1_epi32(4);
             ir5 = _mm256_and_si256(ir5,ir7);
-            ir4  = _mm256_max_epi32(ir4,ir5);
+            ir4 = _mm256_max_epi32(ir4,ir5);
 
-            r7 = _mm256_set1_ps(0.0f);
-            r5 = _mm256_cmp_ps(r15,r7,_CMP_LT_OQ);
+            // ECL : This block just removes any positive values, so if there were no negative 
+            // numbers for a particular n, itetrad[n] would be 0. -EPS accounts for floating point precision errors
+            r7  = _mm256_set1_ps(-EPS);            
+            r5  = _mm256_cmp_ps(r15,r7,_CMP_LT_OQ);
             ir5 = _mm256_castps_si256(r5);
             ir4 = _mm256_and_si256(ir4,ir5);
-
+            
             _mm256_store_si256((__m256i *)itetrad_avx,ir4);
+            
+            // ECL : == End find_best_tetrad ==
 
-            /*
-            r4 = _mm256_min_ps(r3,r6);
-            r5 = _mm256_min_ps(r9,r12);
-            r7 = _mm256_set1_ps(0.0f);
-            r4 = _mm256_min_ps(r4,r5);
-            r5 = _mm256_cmp_ps(r4,r7,_CMP_LT_OQ);
-            ir5 = _mm256_castps_si256(r5);
 
-            //could use _mm256_testz_si256 to skip below...
-            //faster?  depends on volume fraction of inner tetrahedron
-            //nope.  only 1/8 are in inner, 1/8 on border, 3/4 outside
-            unsigned inner[NSIMD];
-            ir5 = _mm256_castps_si256(r5);
-            _mm256_storeu_si256((__m256i *)inner,ir5);
-            printf("INNER %d\n",
-                (inner[0]==0)+(inner[1]==0)+(inner[2]==0)+(inner[3]==0)+
-                (inner[4]==0)+(inner[5]==0)+(inner[6]==0)+(inner[7]==0));
-
-            r7  = _mm256_cmp_ps(r4,r3,_CMP_EQ_OQ);
-            ir7 = _mm256_castps_si256(r7);
-            ir8 = _mm256_set1_epi32(1);
-            ir7 = _mm256_and_si256(ir5,ir7);
-            ir7 = _mm256_and_si256(ir8,ir7);
-
-            r10  = _mm256_cmp_ps(r4,r6,_CMP_EQ_OQ);
-            ir10 = _mm256_castps_si256(r10);
-            ir8  = _mm256_set1_epi32(2);
-            ir10 = _mm256_and_si256(ir5,ir10);
-            ir10 = _mm256_and_si256(ir8,ir10);
-
-            r11  = _mm256_cmp_ps(r4,r9,_CMP_EQ_OQ);
-            ir11 = _mm256_castps_si256(r11);
-            ir8  = _mm256_set1_epi32(3);
-            ir11 = _mm256_and_si256(ir5,ir11);
-            ir11 = _mm256_and_si256(ir8,ir11);
-
-            r13  = _mm256_cmp_ps(r4,r12,_CMP_EQ_OQ);
-            ir13 = _mm256_castps_si256(r13);
-            ir8  = _mm256_set1_epi32(4);
-            ir13 = _mm256_and_si256(ir5,ir13);
-            ir13 = _mm256_and_si256(ir8,ir13);
-
-            ir7  = _mm256_min_epi32(ir7,ir10);
-            ir11 = _mm256_min_epi32(ir11,ir13);
-            ir7  = _mm256_min_epi32(ir7,ir11);  // itetrad
-            _mm256_store_si256((__m256i *)itetrad_avx,ir7);
-            */
             #ifdef TEST_AVX
-              printf("itetrad_avx=%u\n", itetrad_avx[0]);
+            for(n=0;n<NSIMD;n++) {
+              idx2coord(r, MIN(idst_max, idst+n), dst_shape);
+              map(tetrads, lambdas, r);
+              itetrad = find_best_tetrad(lambdas);
+              if(itetrad_avx[n] != itetrad) { 
+                printf("ERROR:\n\titetrad     = %i\n\titetrad_avx = %i\n", itetrad, itetrad_avx[n]);
+                printf("\t\t\t\tlambdas     =  %.20f,  %.20f,  %.20f,  %.20f\n\
+                        \tlambdas_avx =  %.20f,  %.20f,  %.20f,  %.20f\n\n",
+                         lambdas[0],       lambdas[1],       lambdas[2],       lambdas[3],
+                     lambdas_avx[0][n],lambdas_avx[1][n],lambdas_avx[2][n],lambdas_avx[3][n]);
+              }
+            }
             #endif
 
-            // if(itetrad>0) {
-            //     map(tetrads+itetrad,lambdas,r);   // Map best tetrahedron
-            // }
 
-            // could make this into function as it's repeated above
+            // ECL : We now want to check if the 8 itetrads in itetrad_avx are the same, as
+            //       this will make the logic easier.
 
-            // const float * const T=tetrads->T;
-            // const float * const ori=tetrads->ori;
+            // ECL : ir4 = a1, a2, a3, a4, a5, a6, a7, a8
+            //       ir5 = a2, a3, a4, a1, a6, a7, a8, a5
+            //       ir8 = a5, a6, a7, a8, a1, a2, a3, a4
+            //       so if ir4 = ir5 = ir8, we get
+            //       a1 = a2 = a5 = a6 = a7 = a8 = a3 = a4 
+            ir5 = _mm256_shuffle_epi32(ir4, 0b10010011);
+            ir8 = _mm256_permute2x128_si256(ir4, ir4, 0b00000001);
+            ir5 = _mm256_xor_si256(ir4, ir5);
+            ir8 = _mm256_xor_si256(ir4, ir8);
+            ir5 = _mm256_or_si256(ir5, ir8); // ECL : If all numbers were equal, ir5 now holds all zeros
+            unsigned tmp[8];
+            _mm256_store_si256((__m256i *)tmp, ir5);
+            unsigned check = tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7];
+            const float * const T2=(tetrads + itetrad_avx[0])->T;
+            const float * const ori2=(tetrads + itetrad_avx[0])->ori;
+            
 
-            r0 = _mm256_load_ps(r_avx[0]);
-            r1 = _mm256_load_ps(r_avx[1]);
-            r2 = _mm256_load_ps(r_avx[2]);
-            ir15 = _mm256_set1_epi32(12);
-            ir15 = _mm256_mul_epi32(ir7,ir15);
-            r12 = _mm256_i32gather_ps(ori+0,ir15,4);
-            r13 = _mm256_i32gather_ps(ori+1,ir15,4);
-            r14 = _mm256_i32gather_ps(ori+2,ir15,4);
+            // ECL : == Begin second map ==
 
-            r3  = _mm256_i32gather_ps(T+0,ir15,4);
-            r4  = _mm256_i32gather_ps(T+1,ir15,4);
-            r5  = _mm256_i32gather_ps(T+2,ir15,4);
-            r6  = _mm256_i32gather_ps(T+3,ir15,4);
-            r7  = _mm256_i32gather_ps(T+4,ir15,4);
-            r8  = _mm256_i32gather_ps(T+5,ir15,4);
-            r9  = _mm256_i32gather_ps(T+6,ir15,4);
-            r10 = _mm256_i32gather_ps(T+7,ir15,4);
-            r11 = _mm256_i32gather_ps(T+8,ir15,4);
+            //r0  = _mm256_load_ps(r_avx[0]);
+            //r1  = _mm256_load_ps(r_avx[1]);
+            //r2  = _mm256_load_ps(r_avx[2]);
+            switch(check) {
+               case 0 : // ECL : 0 implies all numbers were equal, so just take the correct tetrad and re-map
+                   r12 = _mm256_set1_ps(ori2[0]);
+                   r13 = _mm256_set1_ps(ori2[1]);
+                   r14 = _mm256_set1_ps(ori2[2]);
+                   r3  = _mm256_set1_ps(T2[0]);
+                   r4  = _mm256_set1_ps(T2[1]);
+                   r5  = _mm256_set1_ps(T2[2]);
+                   r6  = _mm256_set1_ps(T2[3]);
+                   r7  = _mm256_set1_ps(T2[4]);
+                   r8  = _mm256_set1_ps(T2[5]);
+                   r9  = _mm256_set1_ps(T2[6]);
+                   r10 = _mm256_set1_ps(T2[7]);
+                   r11 = _mm256_set1_ps(T2[8]);
+                   break;
+               
+               default : // ECL : Otherwise we have to take the correct tetrad on an individual case, thus we gather 
+                   ir15= _mm256_set1_epi32(12);
+                   ir15= _mm256_mullo_epi32(ir4,ir15);
+                   r12 = _mm256_i32gather_ps(&ori[0],ir15,4);              
+                   r13 = _mm256_i32gather_ps(&ori[1],ir15,4);
+                   r14 = _mm256_i32gather_ps(&ori[2],ir15,4);
+                   r3  = _mm256_i32gather_ps(&T[0],ir15,4);
+                   r4  = _mm256_i32gather_ps(&T[1],ir15,4);
+                   r5  = _mm256_i32gather_ps(&T[2],ir15,4);
+                   r6  = _mm256_i32gather_ps(&T[3],ir15,4);
+                   r7  = _mm256_i32gather_ps(&T[4],ir15,4);
+                   r8  = _mm256_i32gather_ps(&T[5],ir15,4);
+                   r9  = _mm256_i32gather_ps(&T[6],ir15,4);
+                   r10 = _mm256_i32gather_ps(&T[7],ir15,4);
+                   r11 = _mm256_i32gather_ps(&T[8],ir15,4); 
+                   break;
+            }
+            r0  = _mm256_sub_ps(r0,r12);   // ECL : r0 = src[0]-ori[0]
+            r1  = _mm256_sub_ps(r1,r13); 
+            r2  = _mm256_sub_ps(r2,r14);
 
-            r0 = _mm256_sub_ps(r0,r12);
-            r1 = _mm256_sub_ps(r1,r13);
-            r2 = _mm256_sub_ps(r2,r14);
+            r3  = _mm256_mul_ps(r0,r3);    //       r3 = T[0] * (src[0]-ori[0]) 
+            r4  = _mm256_mul_ps(r1,r4);    //       r4 = T[1] * (src[1]-ori[1])
+            r3  = _mm256_add_ps(r3,r4);
+            r5  = _mm256_mul_ps(r2,r5);    //       r5 = T[2] * (src[2]-ori[2])
+            r3  = _mm256_add_ps(r3,r5);    //       r3 = r3 + r4 + r5 = lambda[0]
 
-            r3  = _mm256_mul_ps(r0,r3);
-            r4  = _mm256_mul_ps(r1,r4);
-            r5  = _mm256_mul_ps(r2,r5);
-            r6  = _mm256_mul_ps(r0,r6);
-            r7  = _mm256_mul_ps(r1,r7);
-            r8  = _mm256_mul_ps(r2,r8);
-            r9  = _mm256_mul_ps(r0,r9);
-            r10 = _mm256_mul_ps(r1,r10);
-            r11 = _mm256_mul_ps(r2,r11);
+	    r6  = _mm256_mul_ps(r0,r6);    //       r6 = T[3] * (src[0]-ori[0])
+	    r7  = _mm256_mul_ps(r1,r7);    //       r7 = T[4] * (src[1]-ori[1])
+            r6  = _mm256_add_ps(r6,r7);
+	    r8  = _mm256_mul_ps(r2,r8);    //       r8 = T[5] * (src[2]-ori[2])
+            r6  = _mm256_add_ps(r6,r8);    //       r6 =  lambda[1]
 
-            r3 = _mm256_add_ps(r3,r4);
-            r6 = _mm256_add_ps(r6,r7);
-            r9 = _mm256_add_ps(r9,r10);
-            r3 = _mm256_add_ps(r3,r5);   // lambda[0]
-            r6 = _mm256_add_ps(r6,r8);   // lambda[1]
-            r9 = _mm256_add_ps(r9,r11);  // lambda[2]
+	    r9  = _mm256_mul_ps(r0,r9);    //       r9 = T[6] * (src[0]-ori[0])
+	    r10 = _mm256_mul_ps(r1,r10);   //       r10= T[7] * (src[1]-ori[1])
+            r9  = _mm256_add_ps(r9,r10);  
+            r11 = _mm256_mul_ps(r2,r11);   //       r11= T[8] * (src[2]-ori[2])
+            r9  = _mm256_add_ps(r9,r11);   //       r9 = lambda[2]
 
             r12 = _mm256_set1_ps(1.0f);
             r12 = _mm256_sub_ps(r12,r3);
             r12 = _mm256_sub_ps(r12,r6);
-            r12 = _mm256_sub_ps(r12,r9);   // lambda[3]
+            r12 = _mm256_sub_ps(r12,r9);
+            #ifdef TEST_AVX
             _mm256_store_ps(lambdas_avx[0],r3);
             _mm256_store_ps(lambdas_avx[1],r6);
             _mm256_store_ps(lambdas_avx[2],r9);
             _mm256_store_ps(lambdas_avx[3],r12);
-            #ifdef TEST_AVX
-              printf("lambda_avx=%f,%f,%f,%f\n",
-                  lambdas_avx[0][0],lambdas_avx[1][0],lambdas_avx[2][0],lambdas_avx[3][0]);
             #endif
 
-            // if(any_less_than_zero(lambdas,4)) // other boundary
-            //     continue;
-            r4 = _mm256_min_ps(r3,r6);
-            r5 = _mm256_min_ps(r9,r12);
-            r7 = _mm256_set1_ps(-EPS);
-            r4 = _mm256_min_ps(r4,r5);
-            r5 = _mm256_cmp_ps(r4,r7,_CMP_LT_OQ);
+            // ECL : == End second map ==
+
+
+            // ECL : == Begin skip_it_avx ==
+
+            r4  = _mm256_min_ps(r3,r6);
+            r5  = _mm256_min_ps(r9,r12);
+            r7  = _mm256_set1_ps(-EPS);
+            r4  = _mm256_min_ps(r4,r5);            // ECL : r4 = smallest lambda
+            r5  = _mm256_cmp_ps(r4,r7,_CMP_LT_OQ); // ECL : if a lambda is negative, skip it in the interp.
             ir5 = _mm256_castps_si256(r5);
             _mm256_store_si256((__m256i *)skip_it_avx,ir5);
-            //printf("NEGATIVE %d\n",
-            //    (skip_it_avx[0]>0)+(skip_it_avx[1]>0)+(skip_it_avx[2]>0)+(skip_it_avx[3]>0)+
-            //    (skip_it_avx[4]>0)+(skip_it_avx[5]>0)+(skip_it_avx[6]>0)+(skip_it_avx[7]>0));
-            #ifdef TEST_AVX
-              printf("any_less_than_zero_avx=%u\n", skip_it_avx[0]);
-            #endif
-            
-            #ifdef TIME_AVX
-              printf("AVX %10gs\t%s\n",toc(&t),"");
-              t=tic();
-            #endif
 
-            #if defined(TEST_AVX) || defined(TIME_AVX)
-              idx2coord(r,idst,dst_shape);
-              map(tetrads,lambdas0,r);             // Map center tetrahedron
-              itetrad=find_best_tetrad(lambdas0);
-              if(itetrad>0) {
-                  map(tetrads+itetrad,lambdas,r);   // Map best tetrahedron
-              }
-              skip_it=any_less_than_zero(lambdas,4); // other boundary
-            #endif
-            #ifdef TEST_AVX
-              printf("r=%f,%f,%f\n",r[0],r[1],r[2]);
-              printf("lambda0=%f,%f,%f,%f\n",lambdas0[0],lambdas0[1],lambdas0[2],lambdas0[3]);
-              printf("itetrad=%u\n",itetrad);
-              printf("lambda=%f,%f,%f,%f\n",lambdas[0],lambdas[1],lambdas[2],lambdas[3]);
-              printf("any_less_than_zero=%u\n", skip_it);
-              if((r[0]!=r_avx[0][0]) ||
-                 (r[1]!=r_avx[1][0]) ||
-                 (r[2]!=r_avx[2][0])) printf("ERROR rs not equal\n");
-              if(itetrad!=itetrad_avx[0]) printf("ERROR itetrads not equal\n");
-              if((lambdas[0]!=lambdas_avx[0][0]) ||
-                 (lambdas[1]!=lambdas_avx[1][0]) ||
-                 (lambdas[2]!=lambdas_avx[2][0])) printf("ERROR lambdas' not equal, itetrad=%d\n",itetrad);
-              if((skip_it==0) != (skip_it_avx[0]==0)) printf("ERROR any_less_than_zeros not equal\n");
-            #endif
-            #ifdef TIME_AVX
-              printf("CPU %10gs\t%s\n",toc(&t),"");
-              t=tic();
-            #endif
+            // ECL : == End skip_it_avx ==
+
+            // ECL : == Begin interp ==
+            //       We make the interpolation to amenable to AVX by unrolling the inner loops of the 
+            //     original version. As such, we now accumulate three s variables (one for each dimension)
+            //     12 w variables, etc.
+            r0 = _mm256_setzero_ps();                            // ECL : r0 will hold s0
+            r1 = _mm256_setzero_ps();                            //       r1 will hold s1
+            r2 = _mm256_setzero_ps();                            //       r2 will hold s2
+            r4 = _mm256_set1_ps((float)src_shape[0]);
+            r5 = _mm256_set1_ps((float)src_shape[1]);
+            r7 = _mm256_set1_ps((float)src_shape[2]);
             
-            // Map source index
+            ir4 = _mm256_mullo_epi32(ir4, _mm256_set1_epi32(4)); // ECL : Since indexes is stored in 
+            ir0 = _mm256_i32gather_epi32(**indexes+0,ir4,4);     //     row-major ordering, indexes+n
+            ir1 = _mm256_i32gather_epi32(**indexes+1,ir4,4);     //     grabs the nth collumn of indexes.
+            ir2 = _mm256_i32gather_epi32(**indexes+2,ir4,4);     //     Since each row has 4 elements, we 
+            ir3 = _mm256_i32gather_epi32(**indexes+3,ir4,4);     //     multiply itetrad by 4.
+            
+            ir5 = _mm256_set1_epi32(1);
+            
+            ir6 = _mm256_and_si256(ir0, ir5);                    // ECL : ir6 = (idx>>0 & 1) = BIT(idx,0)
+            ir7 = _mm256_and_si256(ir1, ir5);
+            ir8 = _mm256_and_si256(ir2, ir5);
+            ir9 = _mm256_and_si256(ir3, ir5);
+
+            r11 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir6), r3);    // ECL : r11 = w*BIT(idx,0)
+            r13 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir7), r6);
+            r14 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir8), r9);
+            r15 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir9), r12);
+            
+            r0  = _mm256_add_ps(r11,r13);                        // ECL : r0/s0 accumulates values
+            r0  = _mm256_add_ps(r0,r14);
+            r0  = _mm256_add_ps(r0,r15);
+ 
+            ir6 = _mm256_srli_epi32(ir0,0b00000001);             // ECL : ir6 = idx>>1
+            ir7 = _mm256_srli_epi32(ir1,0b00000001);
+            ir8 = _mm256_srli_epi32(ir2,0b00000001);
+            ir9 = _mm256_srli_epi32(ir3,0b00000001);
+            ir6 = _mm256_and_si256(ir6, ir5);                    // ECL : ir6 = BIT(idx,1)
+            ir7 = _mm256_and_si256(ir7, ir5);
+            ir8 = _mm256_and_si256(ir8, ir5);
+            ir9 = _mm256_and_si256(ir9, ir5);
+
+            r11 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir6), r3);    // ECL : r11 = w*BIT(idx,1)
+            r13 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir7), r6);
+            r14 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir8), r9);
+            r15 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir9), r12);
+            r1  = _mm256_add_ps(r11,r13);                      
+            r1  = _mm256_add_ps(r1,r14);
+            r1  = _mm256_add_ps(r1,r15);
+            
+            ir6 = _mm256_srli_epi32(ir0,0b00000010);             // ECL : ir6 = idx>>2
+            ir7 = _mm256_srli_epi32(ir1,0b00000010);
+            ir8 = _mm256_srli_epi32(ir2,0b00000010);
+            ir9 = _mm256_srli_epi32(ir3,0b00000010);
+            ir6 = _mm256_and_si256(ir6, ir5);
+            ir7 = _mm256_and_si256(ir7, ir5);
+            ir8 = _mm256_and_si256(ir8, ir5);
+            ir9 = _mm256_and_si256(ir9, ir5);
+
+            r11 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir6), r3);
+            r13 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir7), r6);
+            r14 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir8), r9);
+            r15 = _mm256_mul_ps(_mm256_cvtepi32_ps(ir9), r12);
+            r2  = _mm256_add_ps(r11,r13);
+            r2  = _mm256_add_ps(r2,r14);
+            r2  = _mm256_add_ps(r2,r15);
+            
+            r0 = _mm256_mul_ps(r0,r4);                           // ECL : r0=s0*d
+            r1 = _mm256_mul_ps(r1,r5);
+            r2 = _mm256_mul_ps(r2,r7);
+            
+            r10 = _mm256_setzero_ps();                           // ECL : if r0/s0 is less than zero, set it to zero
+            r0 = _mm256_max_ps(r0, r10);
+            r1 = _mm256_max_ps(r1, r10);
+            r2 = _mm256_max_ps(r2, r10);
+            
+            r10 = _mm256_set1_ps(((float)src_shape[0])-1.0f);
+            r0 = _mm256_min_ps(r0, r10);                         // ECL : if r0/s0 is greater than d-1, set it to d-1
+
+            r10 = _mm256_set1_ps(((float)src_shape[1])-1.0f);
+            r1 = _mm256_min_ps(r1, r10);
+            
+            r10 = _mm256_set1_ps(((float)src_shape[2])-1.0f);
+            r2 = _mm256_min_ps(r2, r10);
+
+            r13 = _mm256_floor_ps(r0);                           // ECL : r13 = integer part of s
+            r14 = _mm256_floor_ps(r1);
+            r15 = _mm256_floor_ps(r2);
+            
+            ir3 = _mm256_cvtps_epi32(r13);                       // ECL : ir3 = zero[0]
+            ir4 = _mm256_cvtps_epi32(r14);                       //       ir4 = zero[1]
+            ir5 = _mm256_cvtps_epi32(r15);                       //       ir5 = zero[2]
+            
+            float ALIGN frac_avx[3][NSIMD];
+            switch(method) {
+               
+              case 0:
+                ir0  = _mm256_set1_epi32(src_strides[0]);
+                ir1  = _mm256_set1_epi32(src_strides[1]);
+                ir2  = _mm256_set1_epi32(src_strides[2]);
+                
+                ir0 = _mm256_mullo_epi32(ir0,ir3);
+                ir1 = _mm256_mullo_epi32(ir1,ir4);
+                ir2 = _mm256_mullo_epi32(ir2,ir5);
+                
+                ir12 = _mm256_add_epi32(ir0,ir1);
+                ir12 = _mm256_add_epi32(ir12,ir2);
+              case 1:
+                r0 = _mm256_sub_ps(r0,r13);                      // ECL : r0 = frac[0]
+                r1 = _mm256_sub_ps(r1,r14);                      //       r1 = frac[1]
+                r2 = _mm256_sub_ps(r2,r15);                      //       r2 = frac[2]
+            
+                ir9 = _mm256_set1_epi32(1);
+                ir6 = _mm256_add_epi32(ir3,ir9);                 //       ir6 = one[0]
+                ir7 = _mm256_add_epi32(ir4,ir9);                 //       ir7 = one[1]
+                ir8 = _mm256_add_epi32(ir5,ir9);                 //       ir8 = one[2]
+
+                // ECL : If zero > source_shape for any number, we add it to skip_it_avx
+                r15 = _mm256_cmp_ps(_mm256_cvtepi32_ps(ir3), r4, _CMP_GE_OQ);                   
+                r15 = _mm256_and_ps(r15, _mm256_cmp_ps(_mm256_cvtepi32_ps(ir4), r5, _CMP_GE_OQ));
+                r15 = _mm256_and_ps(r15, _mm256_cmp_ps(_mm256_cvtepi32_ps(ir5), r7, _CMP_GE_OQ));
+                ir9 = _mm256_load_si256((__m256i *)skip_it_avx);
+                ir9 = _mm256_or_si256(ir9, _mm256_cvtps_epi32(r15));
+                _mm256_store_si256((__m256i *)skip_it_avx, ir9);
+                ir11 = _mm256_set1_epi32(1);
+ 
+                // ECL : If one > source shape, subtract 1
+                ir10 = _mm256_add_epi32(ir6, ir11);
+                ir9 = _mm256_cmpgt_epi32(ir10, _mm256_cvtps_epi32(r4));
+                ir9 = _mm256_and_si256(ir9, _mm256_set1_epi32(1));
+                ir6 = _mm256_sub_epi32(ir6, ir9);
+           
+                ir10 = _mm256_add_epi32(ir7, ir11);
+                ir9 = _mm256_cmpgt_epi32(ir10, _mm256_cvtps_epi32(r5));
+                ir9 = _mm256_and_si256(ir9, _mm256_set1_epi32(1));
+                ir7 = _mm256_sub_epi32(ir7, ir9);
+
+                ir10 = _mm256_add_epi32(ir8, ir11);
+                ir9 = _mm256_cmpgt_epi32(ir10, _mm256_cvtps_epi32(r7));
+                ir9 = _mm256_and_si256(ir9, _mm256_set1_epi32(1));
+                ir8 = _mm256_sub_epi32(ir8, ir9);
+
+                ir0  = _mm256_set1_epi32(src_strides[0]);
+                ir1  = _mm256_set1_epi32(src_strides[1]);
+                ir2  = _mm256_set1_epi32(src_strides[2]);
+                ir10 = _mm256_mullo_epi32(ir3,ir0);              // ECL : ir10 = zero[0]*strides[0]
+                ir11 = _mm256_mullo_epi32(ir4,ir1);              //       ir11 = zero[1]*strides[1]
+                ir12 = _mm256_mullo_epi32(ir5,ir2);              //       ir12 = zero[2]*strides[2]
+                ir13 = _mm256_mullo_epi32(ir6,ir0);              //       ir13 = one[0]*strides[0]
+                ir14 = _mm256_mullo_epi32(ir7,ir1);              //       ir14 = one[1]*strides[1]
+                ir15 = _mm256_mullo_epi32(ir8,ir2);              //       ir15 = one[2]*strides[2]
+
+                ir4 = _mm256_add_epi32(ir11,ir12);               //       ir4 = (        zero[1]+zero[2])*strides[]
+                ir5 = _mm256_add_epi32(ir14,ir12);               //       ir5 = (         one[1]+zero[2])*strides[]
+                ir6 = _mm256_add_epi32(ir4,ir10);                //       ir6 = (zero[0]+zero[1]+zero[2])*strides[]
+                ir7 = _mm256_add_epi32(ir4,ir13);                //       ir7 = ( one[0]+zero[1]+zero[2])*strides[]
+                ir8 = _mm256_add_epi32(ir5,ir10);                //       ir8 = (zero[0]+ one[1]+zero[2])*strides[]
+                ir9 = _mm256_add_epi32(ir5,ir13);                //       ir9 = ( one[0]+ one[1]+zero[2])*strides[]
+
+                ir6 = _mm256_i32gather_epi32((int*)src,ir6,2);
+                ir7 = _mm256_i32gather_epi32((int*)src,ir7,2);
+                ir8 = _mm256_i32gather_epi32((int*)src,ir8,2);
+                ir9 = _mm256_i32gather_epi32((int*)src,ir9,2);
+
+                ir0 = _mm256_add_epi32(ir11,ir15);
+                ir1 = _mm256_add_epi32(ir14,ir15);
+                ir2 = _mm256_add_epi32(ir0,ir10);
+                ir3 = _mm256_add_epi32(ir0,ir13);
+                ir4 = _mm256_add_epi32(ir1,ir10);
+                ir5 = _mm256_add_epi32(ir1,ir13);
+
+                ir2 = _mm256_i32gather_epi32((int*)src,ir2,2);
+                ir3 = _mm256_i32gather_epi32((int*)src,ir3,2);
+                ir4 = _mm256_i32gather_epi32((int*)src,ir4,2);
+                ir5 = _mm256_i32gather_epi32((int*)src,ir5,2);
+
+                r13  = _mm256_set1_ps(1.0f);
+                r13  = _mm256_sub_ps(r13,r0);                    // ECL : tmp=1-frac
+                ir10 = _mm256_set1_epi32(0x0000FFFF);            // BA  : assumes little-endian?
+
+                ir6 = _mm256_and_si256(ir6,ir10);
+                ir7 = _mm256_and_si256(ir7,ir10);
+                ir8 = _mm256_and_si256(ir8,ir10);
+                ir9 = _mm256_and_si256(ir9,ir10);
+
+                r6 = _mm256_cvtepi32_ps(ir6);
+                r7 = _mm256_cvtepi32_ps(ir7);
+                r8 = _mm256_cvtepi32_ps(ir8);
+                r9 = _mm256_cvtepi32_ps(ir9);
+                r6  = _mm256_mul_ps(r6,r13);
+                r7  = _mm256_mul_ps(r7,r0);
+                r8  = _mm256_mul_ps(r8,r13);
+                r9  = _mm256_mul_ps(r9,r0);
+                r12 = _mm256_add_ps(r6,r7);                      // ECL : r12 = c00
+                r11 = _mm256_add_ps(r8,r9);                      //       r11 = c10
+
+                ir2 = _mm256_and_si256(ir2,ir10);
+                ir3 = _mm256_and_si256(ir3,ir10);
+                ir4 = _mm256_and_si256(ir4,ir10);
+                ir5 = _mm256_and_si256(ir5,ir10);
+
+                r15 = _mm256_cvtepi32_ps(ir2);
+                r3 = _mm256_cvtepi32_ps(ir3);
+                r4 = _mm256_cvtepi32_ps(ir4);
+                r5 = _mm256_cvtepi32_ps(ir5);
+                r15 = _mm256_mul_ps(r15,r13);
+                r3 = _mm256_mul_ps(r3,r0);
+                r4 = _mm256_mul_ps(r4,r13);
+                r5 = _mm256_mul_ps(r5,r0);
+                r14 = _mm256_add_ps(r15,r3);                     // ECL : r14 = c01
+                r13 = _mm256_add_ps(r4,r5);                      //       r13 = c11
+
+                r3  = _mm256_set1_ps(1.0f);
+                r4  = _mm256_sub_ps(r3,r1);                      //       tmp=1-frac
+                r12 = _mm256_mul_ps(r12,r4);
+                r14 = _mm256_mul_ps(r14,r4);
+                r12 = _mm256_fmadd_ps(r1,r11,r12);               //       r12 = c0
+                r14 = _mm256_fmadd_ps(r1,r13 ,r14);              //       r14 = c1
+
+                r4  = _mm256_sub_ps(r3,r2);                      //       tmp=1-frac
+                r12 = _mm256_mul_ps(r12,r4);
+                r12 = _mm256_fmadd_ps(r2,r14,r12);
+                break;
+            } 
+
+            ir12 = _mm256_cvtps_epi32(r12);                      // ECL : ir12 = dst[idst] through dst[idst+NSIMD-1]
+            unsigned ALIGN tmp2[NSIMD];
+            _mm256_store_si256((__m256i *)tmp2,ir12);
             for(idst2=0; idst2<NSIMD; idst2++)
             {
-                if((idst+idst2)>idst_max)  break;
-                if(skip_it_avx[idst2]>0)  continue;
+                if((idst+idst2)>idst_max)  break;                // ECL : If we surpass idst_max, we stop
+                if(skip_it_avx[idst2]>0)  continue;              //       Skipping "bad" pixels
 
-                if(method==0) { //  nathan's original nearest neighbor
-                  unsigned idim,ilambda,isrc=0;
-                  for(idim=0;idim<3;++idim) {
-                      float s=0.0f;
-                      const float d=(float)(src_shape[idim]);
-                      for(ilambda=0;ilambda<4;++ilambda) {
-                          const float      w=lambdas_avx[ilambda][idst2];
-                          const unsigned idx=(*indexes)[itetrad_avx[idst2]][ilambda];
-                          s+=w*BIT(idx,idim);
-                      }
-                      s*=d;
-                      s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
-                      isrc+=src_strides[idim]*((unsigned)s); // important to floor here.  can't change order of sums
-                  }
-                  dst[idst+idst2]=src[isrc]; }
-
-                else if(method==1) { // ben's trilinear
-                  float frac[3],tmp,c00,c10,c01,c11,c0,c1;
-                  unsigned zero[3],one[3];
-                  unsigned idim,ilambda;
-                  for(idim=0;idim<3;++idim) {
-                    float s=0.0f;
-                    const float d=(float)(src_shape[idim]);
-                    for(ilambda=0;ilambda<4;++ilambda) {
-                      const float      w=lambdas_avx[ilambda][idst2];
-                      const unsigned idx=(*indexes)[itetrad_avx[idst2]][ilambda];
-                      s+=w*BIT(idx,idim); }
-                    s*=d;
-                    s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
-                    frac[idim] = modff(s,&tmp);
-                    zero[idim]=(unsigned)tmp;
-                    one[idim]=zero[idim]+1; }
-                  if(zero[0]>=src_shape[0] || zero[1]>=src_shape[1] || zero[2]>=src_shape[2]) continue;
-                  if(one[0]>=src_shape[0]) one[0]--;  // otherwise pixels are black at edges, not sure why
-                  if(one[1]>=src_shape[1]) one[1]--;
-                  if(one[2]>=src_shape[2]) one[2]--;
-                  tmp = (1.0f-frac[0]);
-                  c00 = src[zero[0]*src_strides[0]+zero[1]*src_strides[1]+zero[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+zero[1]*src_strides[1]+zero[2]*src_strides[2]]*frac[0];
-                  c10 = src[zero[0]*src_strides[0]+ one[1]*src_strides[1]+zero[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+ one[1]*src_strides[1]+zero[2]*src_strides[2]]*frac[0];
-                  c01 = src[zero[0]*src_strides[0]+zero[1]*src_strides[1]+ one[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+zero[1]*src_strides[1]+ one[2]*src_strides[2]]*frac[0];
-                  c11 = src[zero[0]*src_strides[0]+ one[1]*src_strides[1]+ one[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+ one[1]*src_strides[1]+ one[2]*src_strides[2]]*frac[0];
-                  tmp = (1.0f-frac[1]);
-                  c0 = c00*tmp + c10*frac[1];
-                  c1 = c01*tmp + c11*frac[1];
-                  dst[idst+idst2] = c0*(1.0f-frac[2]) + c1*frac[2]; }
+                dst[idst+idst2] = tmp2[idst2];                
             }
-
+           
         }
     }
 }
@@ -657,9 +887,9 @@ int BarycentricAVXresample(struct resampler * const self,
     */
 
     struct tetrahedron tetrads[5];
-    thread_t ts[8]={0};
-    struct work jobs[8]={0};
-    unsigned i;
+    thread_t ts[NTHREADS]={0};
+    struct work jobs[NTHREADS]={0};
+    unsigned i,j;
 
     struct ctx * const ctx=self->ctx;
     TPixel * const restrict         dst         = ctx->dst;
@@ -668,12 +898,11 @@ int BarycentricAVXresample(struct resampler * const self,
     TPixel * const restrict         src         = ctx->src;
     const unsigned * const restrict src_shape   = ctx->src_shape;
     const unsigned * const restrict src_strides = ctx->src_strides;
-
     indexes = orientation==0 ? &indexes0 : &indexes90;
-
+    
     for(i=0;i<5;i++)
         tetrahedron(tetrads+i,cubeverts,(*indexes)[i]); // TODO: VERIFY the indexing on "indexes" works correctly here
-
+    
     for(i=0;i<NTHREADS;++i)
     {
         const struct work job={dst,dst_shape,dst_strides,src,src_shape,src_strides,tetrads,i*NSIMD,method};

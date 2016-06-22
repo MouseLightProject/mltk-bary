@@ -43,13 +43,90 @@ void interp(TPixel * restrict dst,  // 1
 __m256 r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15;
 __m256i ir0,ir1,ir2,ir3,ir4,ir5,ir6,ir7,ir8,ir9,ir10,ir11,ir12,ir13,ir14,ir15;
 
+
+/* ========This must be done before interp_avx
+ float frac[3],tmp,c00,c10,c01,c11,c0,c1;
+ unsigned zero[3],one[3];
+ unsigned idim,ilambda;
+ for(idim=0;idim<3;++idim) {
+   float s=0.0f;
+   const float d=(float)(src_shape[idim]);
+   for(ilambda=0;ilambda<4;++ilambda) {
+     const float      w=lambdas_avx[ilambda][idst2];
+     const unsigned idx=(*indexes)[itetrad_avx[idst2]][ilambda];
+     s+=w*BIT(idx,idim); }
+   s*=d;
+   s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
+   frac[idim] = modff(s,&tmp);
+   zero[idim]=(unsigned)tmp;
+   one[idim]=zero[idim]+1; }
+   if(zero[0]>=src_shape[0] || zero[1]>=src_shape[1] || zero[2]>=src_shape[2]) continue;
+   if(one[0]>=src_shape[0]) one[0]--;  // otherwise pixels are black at edges, not sure why
+   if(one[1]>=src_shape[1]) one[1]--;
+   if(one[2]>=src_shape[2]) one[2]--;
+
+*/
 void interp_avx(TPixel * restrict dst,  // 1
          TPixel * restrict src,  // 1
          unsigned (* const restrict zero)[8],  // 3
          unsigned (* const restrict one)[8],   // 3
          float (* const restrict frac)[8],   // 3 
          unsigned * const restrict strides) {  // 3
-
+    /*
+    r0-2 = _mm256_setzero_ps();                  // s
+    r3 = _mm256_set1_ps((float)(src_shape[0]));// d0
+    r4 = _mm256_set1_ps((float)(src_shape[1]));// d1
+    r5 = _mm256_set1_ps((float)(src_shape[2]));// d2
+    r6 = lambdas[0] // w0
+    r7 = lambdas[1] // w1
+    r8 = lambdas[2] // w2
+    r9 = lambdas[3] // w3
+    ir0-3 = some sort of gather on idexes //idx0-3
+    ir5 = _mm256_set1_epi32(1);
+    ir6-9 = _mm256_and_si256(ir0-3, ir5);
+    ir6-9 = _mm256_mullo_epi32(ir0-3, _cvtps_epi32(r6-9)
+    r0 = _mm256_add_ps(cvtepi32_ps(ir6-9));
+    ir6-9 = ir0-4 >> 1
+    ir6-9 = _mm256_and_si256(ir6-9, ir5);
+    ir6-9 = _mm256_mullo_epi32(ir0-3, _cvtps_epi32(r6-9)
+    r1 = _mm256_add_ps(cvtepi32_ps(ir6-9));
+    ir6-9 = ir0-4 >> 2
+    ir6-9 = _mm256_and_si256(ir6-9, ir5);
+    ir6-9 = _mm256_mullo_epi32(ir0-4, _cvtps_epi32(r6-9)
+    r2 = _mm256_add_ps(cvtepi32_ps(ir6-9));
+    r0-2 *= r3-5
+    r10 = _mm256_setzero_ps();
+    r0-2 = max(r0-2, r10);
+    r10 = set1(d0-1)
+    r0 = min(r0, r10)
+    r10 = set1(d1-1)
+    r1  = min(r1, r10)
+    r10 = set1(d2-1);
+    r2 = min(r2, r10);
+    r6 = floor(r0)
+    r7 = floor(r1)
+    r8 = floor(r2)
+    r0 = r0 - r6 //frac0
+    r1 = r1 - r7 //frac1
+    r2 = r2 - r8 //frac2
+    ir3 = epi32(r6) // zero0 
+    ir4 = epi32(r7) // zero1
+    ir5 = epi32(r8) // zero2
+    ir6-8 = ir3-4+1 //one
+    ir9 = cmp(ir3, r3, LT_OQ)
+    ir9 = and(ir9, cmp(ir4, r4, LT_OQ))
+    ir9 = and(ir9, cmp(ir5, r5, LT_OQ))
+    r15 = ir9       //skip it
+    ir9 = cmp(r3, ir6, LE_OQ)
+    ir9 = and(ir9, set1(1))
+    ir6 = sub(ir6, ir9)
+    ir9 = cmp(r4, ir7, LE_OQ)
+    ir9 = and(ir9, set1(1))
+    ir7 = sub(ir7, ir9)
+    ir9 = cmp(r5, ir8, LE_OQ)
+    ir9 = and(ir9, set1(1))
+    ir8 = sub(ir8, ir9)
+    */
     ir0  = _mm256_set1_epi32(strides[0]);
     ir1  = _mm256_set1_epi32(strides[1]);
     ir2  = _mm256_set1_epi32(strides[2]);
@@ -153,7 +230,7 @@ int main() {
 
   unsigned ALIGN strides[] = {1,100,10000,1000000};
   TPixel *src, dst[16];
-  uint64_t i,j,k,l,n=10000000;
+  uint64_t i,j,k,l,n=100000000;
   
   src=(TPixel*)malloc(strides[3]*sizeof(TPixel));
   for(i=0; i<strides[3]; i++)
