@@ -1,6 +1,7 @@
 #include <resamplers.h>
 #include <matrix.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <math.h>
 
@@ -231,6 +232,24 @@ static const unsigned indexes90[5][4]={
 };
 static unsigned (*indexes)[5][4];
 
+static void fracPixelValues(float * s, const float lambdas[4], const unsigned itetrad, const unsigned * const src_shape)
+{
+  unsigned idim,ilambda;
+  for(idim=0;idim<3;++idim) {
+    s[idim]=0;
+    const float d=(float)(src_shape[idim]);
+    for(ilambda=0;ilambda<4;++ilambda) {
+      const float      w=lambdas[ilambda];
+      #ifdef VERBOSE_AVX
+      printf("lambdas_avx[%i][%i] = %f\n",ilambda,idst2, w);
+      #endif
+      const unsigned idx=(*indexes)[itetrad][ilambda];
+      s[idim]+=w*BIT(idx,idim);
+    }
+    s[idim]*=d;
+    s[idim]=(s[idim]<0.0f)?0.0f:(s[idim]>(d-1))?(d-1):s[idim];
+  }
+}
 /**
     @param cubeverts [in]   An array of floats ordered like float[8][3].
                             Describes the vertices of a three dimensional cube.
@@ -241,8 +260,8 @@ static unsigned (*indexes)[5][4];
                             Bit 1 is the y dimension, and bit 2 the z dimension.
 */
 
-#define NTHREADS (8)
-
+#define NTHREADS (6) 
+//#define VERBOSE_CPU
 struct work {
     TPixel *  restrict dst;
     const unsigned * restrict dst_shape;
@@ -269,56 +288,138 @@ static void worker(void *param) {
         const unsigned * const restrict src_strides         =work->src_strides;
         const struct tetrahedron * const restrict tetrads   =work->tetrads;
         const int method   =work->method;
-
+        
+        //Evan LeGros : Testing variables ----------------------------
+        /*
+        int eightBlock[8] = {0};
+        unsigned eightCounter = 0;
+        unsigned oneTetrahedron = 0;
+        unsigned twoTetrahedron = 0;
+        unsigned threeTetrahedron = 0;
+        */
+        //------------------------------------------------------------
+        
         unsigned idst;
-        for(idst=work->id;idst<prod(dst_shape,3);idst+=NTHREADS) {
+        for(idst=work->id;idst<prod(dst_shape,3);idst+=NTHREADS) { 
             float r[3],lambdas[4];
             unsigned itetrad;
-            idx2coord(r,idst,dst_shape);
+            
+            #ifdef VERBOSE_CPU
+            
+	    printf("===========================================Next call to for loop, i = %i=======================================\n", idst);
+            unsigned i;
+	    printf("------------------r before idx2coord-----------------\n--r[] = ");
+	    for(i=0; i < 3; i++) printf("%f, ", r[i]);
+	    printf("\n-----------------------------------------------------\n");
+	    
+	    printf("-----------------idst before idx2coord---------------\n--idst = %i", idst);
+	    printf("\n-----------------------------------------------------\n");
+            
+ 	    #endif
+	    idx2coord(r,idst,dst_shape);
+	    #ifdef VERBOSE_CPU
+	    
+	    printf("------------------r after idx2coord------------------\n--r[] = ");
+	    for(i=0; i < 3; i++) printf("%f, ", r[i]);
+	    printf("\n-----------------------------------------------------\n");
+	    
+	    printf("-----------------idst before idx2coord---------------\n--idst = %i", idst);
+	    printf("\n-----------------------------------------------------\n");
+	   
+	    #endif
+            
             map(tetrads,lambdas,r);             // Map center tetrahedron
-            
+          
+	    //printf("lambdas[0] = %f\n", lambdas[0]);
+	    //printf("lambdas[1] = %f\n", lambdas[1]);
+	    //printf("lambdas[2] = %f\n", lambdas[2]);
+	    //printf("lambdas[3] = %f\n", lambdas[3]);
+	     
+	    #ifdef VERBOSE_CPU
+	    
+	    printf("--------------lambdas after initial map--------------\n--lambdas[] = ");
+	    for(i=0; i < 4; i++) printf("%f, ", lambdas[i]);
+	    printf("\n-----------------------------------------------------\n");
+	    
+	    #endif
+
             itetrad=find_best_tetrad(lambdas);
-            if(itetrad>0) {
-                map(tetrads+itetrad,lambdas,r);   // Map best tetrahedron
+	    
+	    #ifdef VERBOSE_CPU
+	    printf("------------iterad after find_best_tetrad------------\n--itetrad = %i", itetrad);
+	    printf("\n-----------------------------------------------------\n");
+	    #endif
+            /*
+            if(eightCounter < 8) {
+                eightBlock[eightCounter] = itetrad;
+                eightCounter++;
             }
+            else {
+		int seen[5] = {1, 1, 1, 1, 1};
+                unsigned tets,i;
+		tets = 0;
+                for(i=0; i < 8; i++) {
+                    if(seen[eightBlock[i]] == 1) seen[eightBlock[i]] = 0;
+                }
+		for(i=0; i < 5; i++) {
+                    if(seen[i]==0) tets++;
+                }
+                if(tets == 1) {
+                    oneTetrahedron++;
+                } else if(tets == 2) {
+                    twoTetrahedron++;
+                } else if(tets == 3 || tets == 4 || tets == 5) { //Evan LeGros : Ran into some errors on smaller size test sets where we would in fact hit 4 tetrads in 8 pixels, so catching what should be the only possible cases now
+                    threeTetrahedron++;
+                } else { printf("tets =  %i?", tets); ASSERT(1>2);}
+                
+                eightCounter = 0;
+		eightBlock[eightCounter] = itetrad;
+                eightCounter++;
+            }
+            */ 
+            if(itetrad>0) {
+		
+	        #ifdef VERBOSE_CPU
+		printf("!!!!-itetrad was > 0, (itetrad = %i), so reruning map-\n",itetrad);
+	     	printf("--running map on %i\n", tetrads+itetrad);	
+	        #endif
+                map(tetrads+itetrad,lambdas,r);   // Map best tetrahedron
+		
+	        #ifdef VERBOSE_CPU
+	    	printf("----------------lambdas after second map-------------\n--lambdas[] = ");
+	    	for(i=0; i < 4; i++) printf("%f, ", lambdas[i]);
+	    	printf("\n-----------------------------------------------------\n");
+	        #endif
+            	
+	    }
             
-            if(any_less_than_zero(lambdas,4)) // other boundary
+            if(any_less_than_zero(lambdas,4)) { // other boundary
+		
+	        #ifdef VERBOSE_CPU
+		printf("!!!!-------a lambda was less than 0, continuing------\n",itetrad);
+	        #endif
                 continue;
+	    }
 
             // Map source index
             {
+                float s[3];
+                fracPixelValues(s, lambdas, itetrad, src_shape);
                 if(method==0) { //  nathan's original nearest neighbor
-                  unsigned idim,ilambda,isrc=0;
-                  for(idim=0;idim<3;++idim) {
-                      float s=0.0f;
-                      const float d=(float)(src_shape[idim]);
-                      for(ilambda=0;ilambda<4;++ilambda) {
-                          const float      w=lambdas[ilambda];
-                          const unsigned idx=(*indexes)[itetrad][ilambda];
-                          s+=w*BIT(idx,idim);
-                      }
-                      s*=d;
-                      s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
-                      isrc+=src_strides[idim]*((unsigned)s); // important to floor here.  can't change order of sums
-                  }
+                  unsigned isrc=0;
+                  isrc+=src_strides[0]*((unsigned)s[0]); // important to floor here.  can't change order of sums
+                  isrc+=src_strides[1]*((unsigned)s[1]);
+                  isrc+=src_strides[2]*((unsigned)s[2]); 
                   dst[idst]=src[isrc]; }
 
                 else if(method==1) { // ben's trilinear
                   float frac[3],tmp,c00,c10,c01,c11,c0,c1;
-                  unsigned zero[3],one[3];
-                  unsigned idim,ilambda;
-                  for(idim=0;idim<3;++idim) {
-                    float s=0.0f;
-                    const float d=(float)(src_shape[idim]);
-                    for(ilambda=0;ilambda<4;++ilambda) {
-                      const float      w=lambdas[ilambda];
-                      const unsigned idx=(*indexes)[itetrad][ilambda];
-                      s+=w*BIT(idx,idim); }
-                    s*=d;
-                    s=(s<0.0f)?0.0f:(s>(d-1))?(d-1):s;
-                    frac[idim] = modff(s,&tmp);
-                    zero[idim]=(unsigned)tmp;
-                    one[idim]=zero[idim]+1; }
+                  unsigned zero[3],one[3], i;
+                  for(i = 0; i < 3; i++) {
+                    frac[i] = modff(s[i],&tmp);
+                    zero[i]=(unsigned)tmp;
+                    one[i]=zero[i]+1; 
+                  }
                   if(zero[0]>=src_shape[0] || zero[1]>=src_shape[1] || zero[2]>=src_shape[2]) continue;
                   if(one[0]>=src_shape[0]) one[0]--;  // otherwise pixels are black at edges, not sure why
                   if(one[1]>=src_shape[1]) one[1]--;
@@ -339,6 +440,7 @@ static void worker(void *param) {
             }
 
         }
+	//printf("\n--------\n-number of cases where 8 consecutive pixels were in \n\t-[the same tetrad = %i]\n\t-[two separate tetrads = %i]\n\t-[three or more tetrads = %i]\n-out of %i cases \n--------\n\n",oneTetrahedron, twoTetrahedron, threeTetrahedron, 786432);
     }
 }
 
@@ -360,8 +462,8 @@ int BarycentricCPUresample(struct resampler * const self,
     */
 
     struct tetrahedron tetrads[5];
-    thread_t ts[8]={0};
-    struct work jobs[8]={0};
+    thread_t ts[NTHREADS]={0}; // Evan LeGros : changed from ts[8] to ts[NTHREADS] since I believe thats what was intended
+    struct work jobs[NTHREADS]={0}; //Evan LeGros : same as above 
     unsigned i;
 
     struct ctx * const ctx=self->ctx;
@@ -385,6 +487,14 @@ int BarycentricCPUresample(struct resampler * const self,
     }
     for(i=0;i<NTHREADS;++i) thread_join(ts+i,-1);
     for(i=0;i<NTHREADS;++i) thread_release(ts+i);
+    /*
+    FILE *fp;
+    fp = fopen("cpu_dst.out","w");
+    for(i=0; i<prod(dst_shape,3); i++) {
+      fprintf(fp, "%i: %04x\n", i, dst[i]);
+    }
+    fclose(fp);
+    */
     return 1;
 }
 
