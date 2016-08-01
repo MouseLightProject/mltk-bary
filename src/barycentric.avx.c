@@ -243,7 +243,7 @@ static unsigned (*indexes)[5][4];
                             Bit 1 is the y dimension, and bit 2 the z dimension.
 */
 
-#define NTHREADS (6)
+#define NTHREADS (8)
 #define NSIMD (8)
 
 struct work {
