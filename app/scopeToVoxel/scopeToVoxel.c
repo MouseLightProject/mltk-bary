@@ -572,9 +572,9 @@ int computePixel(float out[3], tile_t inputTile, const float inCoordinates[3]) {
   //     easier searching. I check this assumption first, and print a warning to the logfile if the assumption
   //     is incorrect.
 
-  if(coords[0 + 0] > coords[3 + 0])
+  if(coords[0 + 0] < coords[3 + 0])
     fprintf(logFile, "WARNING: x is increasing instead of decreasing\n");
-  if(coords[0 + 1] > coords[TileSizeXlims(inputTile) + 1])
+  if(coords[0 + 1] < coords[TileSizeXlims(inputTile) + 1])
     fprintf(logFile, "WARNING: y is increasing instead of decreasing\n");
   if(coords[0 + 2] > coords[TileSizeXlims(inputTile)*TileSizeYlims(inputTile) + 2])
     fprintf(logFile, "WARNING: z is decreasing instead of increasing\n");
@@ -784,7 +784,7 @@ int main(int argc, char *argv[]) {
   fprintf(logFile, "INFO: Opening \"%s/tilebase.cache.yml\"\n", path);  
   tiles_t yml = TileBaseOpen(path,NULL);
   if(!yml) {
-    fprintffprintf(stderr, "ERROR: Could not open yml file at \"%s\"\n", path);
+    fprintf(stderr, "ERROR: Could not open yml file at \"%s\"\n", path);
     fclose(logFile);
     fclose(outFile);
     fclose(inFile);
