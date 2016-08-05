@@ -232,7 +232,7 @@ static const unsigned indexes90[5][4]={
 };
 static unsigned (*indexes)[5][4];
 
-static void fracPixelValues(float * s, const float lambdas[4], const unsigned itetrad, const unsigned * const src_shape)
+void fracPixelValues(float * s, const float lambdas[4], const unsigned itetrad, const unsigned * const src_shape)
 {
   unsigned idim,ilambda;
   for(idim=0;idim<3;++idim) {
@@ -498,8 +498,29 @@ int BarycentricCPUresample(struct resampler * const self,
     return 1;
 }
 
-/* Internal testing */
+int BarycentricCPUpixel(   float out[3],
+                           const float * const cubeverts, 
+                           const unsigned * const src_shape,
+                           const int orientation,
+                           const float * const pixelCoordinates) {
+  struct tetrahedron tetrads[5];
+  unsigned i, itetrad;
+  float lambdas[4];
+  
+  indexes = orientation==0 ? &indexes0 : &indexes90;
 
+  for(i=0;i<5;i++)
+        tetrahedron(tetrads+i,cubeverts,(*indexes)[i]);
+
+  map(tetrads, lambdas, pixelCoordinates);
+  itetrad = find_best_tetrad(lambdas);
+  if(itetrad > 0) 
+    map(tetrads+itetrad, lambdas, pixelCoordinates);
+  fracPixelValues(out, lambdas, itetrad, src_shape);
+  return 1;
+}
+
+/* Internal testing */
 static unsigned eq(const float *a,const float *b,int n) {
     int i;
     for(i=0;i<n;++i) if(a[i]!=b[i]) return 0;
