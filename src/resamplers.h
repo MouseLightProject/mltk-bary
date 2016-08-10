@@ -26,12 +26,39 @@ int BarycentricCPUresample(struct resampler * const,
                     const float * const,
                     const int,
                     const int);
+int BarycentricCPUpixel(float out[3],
+                        const float * const cubeverts,
+                        const unsigned * const src_shape,
+                        const int orientation,
+                        const float * const pixelCoordinates);
 void BarycentricCPUrelease(struct resampler *);
 void BarycentricCPUuseReporters( void (*)  (const char*, const char*, const char*, int, const char*,void*),
                           void (*)(const char*, const char*, const char*, int, const char*,void*),
                           void (*)   (const char*, const char*, const char*, int, const char*,void*),
                           void *);
 int BarycentricCPUrunTests(void);
+
+
+int BarycentricAVXinit(struct resampler*,
+                const unsigned * const,
+                const unsigned * const,
+                const unsigned);
+int BarycentricAVXsource(const struct resampler *,
+                  TPixel * const);
+int BarycentricAVXdestination(struct resampler *,
+                       TPixel * const);
+int BarycentricAVXresult(const struct resampler * const,
+                  TPixel * const);
+int BarycentricAVXresample(struct resampler * const,
+                    const float * const,
+                    const int,
+                    const int);
+void BarycentricAVXrelease(struct resampler *);
+void BarycentricAVXuseReporters( void (*)  (const char*, const char*, const char*, int, const char*,void*),
+                          void (*)(const char*, const char*, const char*, int, const char*,void*),
+                          void (*)   (const char*, const char*, const char*, int, const char*,void*),
+                          void *);
+int BarycentricAVXrunTests(void);
 
 
 int BarycentricGPUinit(struct resampler*,
