@@ -15,9 +15,10 @@
 #define NAME "scopeToVoxel"
 
 FILE *outFile, *inFile, *logFile;
+int quiet = 0;
 
 static void printHelp() {
-  fprintf(stdout, "%s -help:\n", NAME);
+  fprintf(stdout, "\n%s -help:\n", NAME);
   fprintf(stdout, "\t-i/-input:  provide an input file for %s to parse. If none specified, default is \"-i=input.txt\"\n");
   fprintf(stdout, "\t-o/-output: provide an output file for %s to print results. If none specified, default is \"-o=output.txt\"\n");
   fprintf(stdout, "\t-l/-log:    provide a log file for %s to print runtime information. If none specified, default is \"-l=stdout\"\n");
@@ -78,7 +79,7 @@ static float det4x4(const float matrix[16]) {
 }
 
 
-float err = 0.1f;
+float err = 0.0001f;
 // ECL : Calculates if a point is within a tetrahedron using determinants. 
 //
 //       Note: this fuction acually can also be modified to tell which plane the point is outside of,
@@ -558,11 +559,11 @@ int computePixel(float out[3], tile_t inputTile, const float inCoordinates[3]) {
       bestDist = dist2(inCoords_nm[0], inCoords_nm[1], inCoords_nm[2], coords[i*3], coords[i*3+1], coords[i*3+2]);
     }
   }
-   
   unsigned cornerIDNew = cornerID;
   // ECL : I have left in this debug to show how to print int64_t. It's horrible.
-  //fprintf(logFile, "\tnear coord = %" PRId64 " %" PRId64 " %" PRId64 "\n", coords[cornerID*3+0], coords[cornerID*3+1], coords[cornerID*3+2]);
-  
+  if(!quiet) 
+    fprintf(logFile, "\tnear coord = %" PRId64 " %" PRId64 " %" PRId64 "\n", coords[cornerID*3+0], coords[cornerID*3+1], coords[cornerID*3+2]);
+  fflush(logFile); 
   // ECL : Because we want the transform to start with the minimal xyz values, we find the Morton corner 
   //     from the guessed corner.
   //
@@ -572,41 +573,53 @@ int computePixel(float out[3], tile_t inputTile, const float inCoordinates[3]) {
   //     easier searching. I check this assumption first, and print a warning to the logfile if the assumption
   //     is incorrect.
 
-  if(coords[0 + 0] < coords[3 + 0])
+  if(coords[0 + 0] < coords[3 + 0] && !quiet) 
     fprintf(logFile, "WARNING: x is increasing instead of decreasing\n");
-  if(coords[0 + 1] < coords[TileSizeXlims(inputTile) + 1])
+  fflush(logFile);
+
+  if(coords[0 + 1] < coords[TileSizeXlims(inputTile) + 1] && !quiet)
     fprintf(logFile, "WARNING: y is increasing instead of decreasing\n");
-  if(coords[0 + 2] > coords[TileSizeXlims(inputTile)*TileSizeYlims(inputTile) + 2])
+  fflush(logFile);
+
+  if(coords[0 + 2] > coords[(TileSizeXlims(inputTile)*TileSizeYlims(inputTile)) + 2] && !quiet)
     fprintf(logFile, "WARNING: z is decreasing instead of increasing\n");
+  fflush(logFile);
 
   if(coords[cornerID*3+0] > inCoords_nm[0]) cornerIDNew += 1; 
   if(coords[cornerID*3+1] > inCoords_nm[1]) cornerIDNew += TileSizeXlims(inputTile);
   if(coords[cornerID*3+2] > inCoords_nm[2]) cornerIDNew -= TileSizeXlims(inputTile) * TileSizeYlims(inputTile);
-
   // ECL : We now want to find which pixel volume our coordinate volume maps to
-  unsigned xID = cornerID % (TileSizeXlims(inputTile));
-  unsigned yID = (cornerID/TileSizeXlims(inputTile)) % (TileSizeYlims(inputTile));
-  unsigned zID = (cornerID/(TileSizeXlims(inputTile)*TileSizeYlims(inputTile))) % (TileSizeZlims(inputTile));
-
+  unsigned xID = cornerIDNew % (TileSizeXlims(inputTile));
+  unsigned yID = (cornerIDNew/TileSizeXlims(inputTile)) % (TileSizeYlims(inputTile));
+  unsigned zID = (cornerIDNew/(TileSizeXlims(inputTile)*TileSizeYlims(inputTile))) % (TileSizeZlims(inputTile));
   // ECL : We check to see if we are lying on a boundry, and move to the closest subvolume if so
   //
   //       ^SIGN^: Bounds checking only checks lower bounds on x and y and upper bounds on z, and corrects
   //     based on the assumption. 
   if(xID == 0 | yID == 0 | zID == TileSizeZlims(inputTile) - 1) { 
+     if(!quiet)
+       fprintf(logFile, "INFO: point is in a boundary subtile\n");
+       
      if(xID == 0){
-       cornerID = cornerID+1;
+       if(!quiet)
+         fprintf(logFile, "INFO: Correcting xID\n");
+       cornerIDNew+=1;
        xID++;
      }
      if(yID == 0) {
-       cornerID = cornerID+TileSizeXlims(inputTile);
+       if(!quiet)
+         fprintf(logFile, "INFO: Correcting yID\n");
+       cornerIDNew+=TileSizeXlims(inputTile);
        yID++;
      }
      if(zID == TileSizeZlims(inputTile) - 1){
-       cornerID = cornerID - TileSizeXlims(inputTile) * TileSizeYlims(inputTile);
+       if(!quiet)
+         fprintf(logFile, "INFO: Correcting zID\n");
+       cornerIDNew-=TileSizeXlims(inputTile) * TileSizeYlims(inputTile);
        zID--;
      }
   }
-
+  cornerID = cornerIDNew;
   // ECL : We grab the source shape from the xyz lims
   //
   //       ^SIGN^: Logic will need to change
@@ -617,18 +630,39 @@ int computePixel(float out[3], tile_t inputTile, const float inCoordinates[3]) {
   
   // ECL : This should not return false since we corrected for bounds above. If it fails, something weird is going on
   if(getTransformAt(inputTile, cornerID, inCoords_nm, transform, inCoords) == 0) {
-    fprintf(logFile, "ERROR: Unexpected result from getTransformAt\n");
+    if(!quiet) 
+      fprintf(logFile, "ERROR: Unexpected result from getTransformAt\n");
     return 0; 
   }
-
+  fflush(logFile);
   // ECL : I may have this orientation incorrect, but I have not gotten issues thus far. If a bug occurs, this may be
   //     the cause. Orientation is also calculated in checkShell and the brute force below.
   orientation = ((xID + yID + zID) % 2 == 0)?90:0;
   int found = 0;
-  if(!pointInCube(inCoords, transform, orientation)) { 
+  int check = pointInCube(inCoords, transform, orientation);
+  if(!quiet){
+     
+     fprintf(logFile, "INFO: inCoords  = %f, %f, %f\n", inCoords[0], inCoords[1], inCoords[2]);
+     fprintf(logFile, "INFO: transform = \n\t%f, %f, %f\n", transform[0], transform[1], transform[2]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[3], transform[4], transform[5]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[6], transform[7], transform[8]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[9], transform[10], transform[11]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[12], transform[13], transform[14]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[15], transform[16], transform[17]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[18], transform[19], transform[20]);
+     fprintf(logFile, "\t%f, %f, %f\n", transform[21], transform[22], transform[23]);
+     fprintf(logFile, "INFO: pointInCube initially = %i\n", check);
+  }
+
+  if(!check) {  
+    if(!quiet)
+      fprintf(logFile, "INFO: Point was not in initial cube\n");
     if(!checkShell(inputTile, cornerID, inCoords_nm, transform, inCoords, &cornerIDNew)) {
-      fprintf(logFile, "INFO: checkShell could not find point\n");
-      fprintf(logFile, "INFO: Attempting brute force search of tile\n");
+      if(!quiet){
+        fprintf(logFile, "INFO: checkShell could not find point\n");
+        fprintf(logFile, "INFO: Attempting brute force search of tile\n");
+      }
+      fflush(logFile);
       unsigned cornerIter;
       // ECL : We were not able to find the point in out guessed subvolume or any surrounding subvolume, so we
       //     brute force checking every subvolume in the tile. This does not seem to happen often, and so
@@ -638,18 +672,16 @@ int computePixel(float out[3], tile_t inputTile, const float inCoordinates[3]) {
         if(getTransformAt(inputTile, cornerIter, inCoords_nm, transform, inCoords) == 0)
           continue;
         if(pointInCube(inCoords, transform, orientation) == 0) {
-          if(checkShell(inputTile, cornerIter, inCoords_nm, transform, inCoords, &cornerIDNew) == 0) 
-            continue;
-          else { 
+          continue;
+         } else { 
             found = 1;
+            cornerIDNew = cornerIter;
             break;
-          }
-        } else {
-          found = 1;
-          break;
-        }
+         }
       }
       if(found == 0)
+        if(!quiet) 
+          fprintf(logFile, "INFO: point not found in tile\n");
         return 0;
     } 
   }
@@ -678,7 +710,6 @@ int main(int argc, char *argv[]) {
 //=================================== ARGUMENT HANDLING ===================================
   char *inFileName=NULL, *outFileName=NULL, *logFileName=NULL, *line;
   line = malloc(1024);
-  int quiet = 0;
   argc--;
   *argv++;
   while(argc--){
@@ -760,7 +791,8 @@ int main(int argc, char *argv[]) {
 
 
 // ECL : Get the first line of the input file which has the path to the yml file
-  fprintf(logFile, "INFO: Reading line 1 of input\n");
+  if(!quiet)
+    fprintf(logFile, "INFO: Reading line 1 of input\n");
   if(fgets(line, 1024, inFile) == NULL) {
     fprintf(stderr, "ERROR: Input file \"%s\" is empty\n", inFileName);
     fclose(logFile);
@@ -777,11 +809,24 @@ int main(int argc, char *argv[]) {
   for(k = 0; k < c; k++) {
     path[k] = line[k];
   }
-  fprintf(logFile, "INFO: Path set to \"%s\"\n", path);
+  if(!quiet)
+    fprintf(logFile, "INFO: Path set to \"%s\"\n", path);
+ 
+  c = 0;
+  fgets(line, 1024, inFile);
+  while(line[c] != '\n') {
+    c++;
+  }
+  char *otherFile = malloc(c);
+  for(k = 0; k < c; k++) {
+    otherFile[k] = line[k];
+  }
+  
 // ECL : path now contains the path to the yml file
   
 
-  fprintf(logFile, "INFO: Opening \"%s/tilebase.cache.yml\"\n", path);  
+  if(!quiet)
+    fprintf(logFile, "INFO: Opening \"%s/tilebase.cache.yml\"\n", path);  
   tiles_t yml = TileBaseOpen(path,NULL);
   if(!yml) {
     fprintf(stderr, "ERROR: Could not open yml file at \"%s\"\n", path);
@@ -789,24 +834,28 @@ int main(int argc, char *argv[]) {
     fclose(outFile);
     fclose(inFile);
   }
-  else
+  else if(!quiet)
     fprintf(logFile, "INFO: Opened \"%s/tilebase.cache.yml\"\n", path);
 
   float inCoords_um[3];
-  char tilePath[100];
-  unsigned lineNumber = 2;
+  char *tilePath;
+  tilePath = malloc(100);
+  int coordNum;
+  unsigned lineNumber = 3;
   
   // ECL : Formatting output to make line numbers match input
   fprintf(outFile, "\n");
-
+  fprintf(outFile, "%s\n", otherFile);
   // ECL : Begin parsing the input file
   while(fgets(line, 1024, inFile) != NULL) {
-    fprintf(logFile, "INFO: Reading line %i of input: \n\t %s",lineNumber, line);
+    if(!quiet)
+      fprintf(logFile, "INFO: Reading line %i of input: \n\t %s",lineNumber, line);
     // ECL : If the line was formatted incorrectly, print a warning to the output file and skip
-    if(sscanf(line, "%f, %f, %f, %s", inCoords_um, inCoords_um+1, inCoords_um+2, tilePath) != 4) { 
+    if(sscanf(line, "%i, %f, %f, %f, %s", &coordNum, inCoords_um, inCoords_um+1, inCoords_um+2, tilePath) != 5) { 
       if(!quiet)
         fprintf(stderr, "WARNING: Encountered incorrect format of input file at line %i\n", lineNumber);
-      fprintf(logFile, "WARNING: The line \"%s\" is not formatted correctly\n", line);
+      if(!quiet)
+        fprintf(logFile, "WARNING: The line \"%s\" is not formatted correctly\n", line);
       fprintf(outFile, "WARNING: Line format error\n");
     } else {
       tile_t t = findTile(&yml, tilePath);
@@ -814,14 +863,17 @@ int main(int argc, char *argv[]) {
       // ECL : Read the input file correctly, but provided tile path was not found
         if(!quiet)
           fprintf(stderr, "WARNING: Tile \"%s\" not found\n", tilePath); 
-        fprintf(logFile, "WARNING: Searched for tile with path \"%s,\" but no was tile found\n", tilePath);
+        if(!quiet)
+          fprintf(logFile, "WARNING: Searched for tile with path \"%s,\" but no was tile found\n", tilePath);
         fprintf(outFile, "WARNING: Tile not found\n");
       } else {
         fprintf(logFile, "INFO: Tile \"%s\" found\n", tilePath);
         float tmp[3];
+        fflush(outFile);
+        fflush(logFile);
         // ECL : An error will orruc if a point is not actually contained within a volume
         if(computePixel(tmp, t, inCoords_um) == 1)
-          fprintf(outFile, "%f, %f, %f\n", tmp[0], tmp[1], tmp[2]);
+          fprintf(outFile, "%i, %f, %f, %f\n", coordNum, tmp[0], tmp[1], tmp[2]);
         else {
           //unsigned found = 0;
           //unsigned idx, size = TileBaseCount(yml);
@@ -841,25 +893,34 @@ int main(int argc, char *argv[]) {
           if(!quiet)
             fprintf(stderr, "ERROR: Point not found in volume at line %i\n", lineNumber); 
           fprintf(outFile, "ERROR: Point mismatch\n");
-          fprintf(logFile, "ERROR: Searched for point within selected volume but point was found");
-          fprintf(logFile, " to be outside the bounds of \"%s\".\n", tilePath);
+          if(!quiet) {
+            fprintf(logFile, "ERROR: Searched for point within selected volume but point was found");
+            fprintf(logFile, " to be outside the bounds of \"%s\".\n", tilePath);
+          }
         }
       }
     }
     lineNumber++;
   }
+  fflush(logFile);
   free(line);
   free(path);
-  fprintf(logFile, "INFO: Finished reading input file\n");
+  free(tilePath);
+  if(!quiet)
+    fprintf(logFile, "INFO: Finished reading input file\n");
 
-  fprintf(logFile, "INFO: Closing all text files\n");
+  if(!quiet)
+    fprintf(logFile, "INFO: Closing all text files\n");
   fclose(inFile);
   fclose(outFile);
-  fprintf(logFile, "INFO: Closed all text files\n");
+  if(!quiet)
+    fprintf(logFile, "INFO: Closed all text files\n");
 
-  fprintf(logFile, "INFO: Closing yml file\n");
+  if(!quiet)
+    fprintf(logFile, "INFO: Closing yml file\n");
   TileBaseClose(yml); 
-  fprintf(logFile, "INFO: Closed yml file\n");
+  if(!quiet)
+    fprintf(logFile, "INFO: Closed yml file\n");
  
   fprintf(logFile, "INFO: Done\n");
   fclose(logFile);
