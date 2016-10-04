@@ -723,6 +723,7 @@ static void worker(void *param) {
             ir5 = _mm256_cvtps_epi32(r15);                       //       ir5 = zero[2]
             
             float ALIGN frac_avx[3][NSIMD];
+            unsigned ALIGN tmp2[NSIMD];
             switch(method) {
                
               case 0:
@@ -736,6 +737,16 @@ static void worker(void *param) {
                 
                 ir12 = _mm256_add_epi32(ir0,ir1);
                 ir12 = _mm256_add_epi32(ir12,ir2);
+
+                _mm256_store_si256((__m256i *)tmp2,ir12);
+                for(idst2=0; idst2<NSIMD; idst2++)
+                {
+                    if((idst+idst2)>idst_max)  break;                // ECL : If we surpass idst_max, we stop
+                    if(skip_it_avx[idst2]>0)  continue;              //       Skipping "bad" pixels
+
+                    dst[idst+idst2] = src[tmp2[idst2]];                
+                }
+                break;
               case 1:
                 r0 = _mm256_sub_ps(r0,r13);                      // ECL : r0 = frac[0]
                 r1 = _mm256_sub_ps(r1,r14);                      //       r1 = frac[1]
@@ -851,19 +862,19 @@ static void worker(void *param) {
                 r4  = _mm256_sub_ps(r3,r2);                      //       tmp=1-frac
                 r12 = _mm256_mul_ps(r12,r4);
                 r12 = _mm256_fmadd_ps(r2,r14,r12);
+
+                ir12 = _mm256_cvtps_epi32(r12);                      // ECL : ir12 = dst[idst] through dst[idst+NSIMD-1]
+
+                _mm256_store_si256((__m256i *)tmp2,ir12);
+                for(idst2=0; idst2<NSIMD; idst2++)
+                {
+                    if((idst+idst2)>idst_max)  break;                // ECL : If we surpass idst_max, we stop
+                    if(skip_it_avx[idst2]>0)  continue;              //       Skipping "bad" pixels
+
+                    dst[idst+idst2] = tmp2[idst2];                
+                }
                 break;
             } 
-
-            ir12 = _mm256_cvtps_epi32(r12);                      // ECL : ir12 = dst[idst] through dst[idst+NSIMD-1]
-            unsigned ALIGN tmp2[NSIMD];
-            _mm256_store_si256((__m256i *)tmp2,ir12);
-            for(idst2=0; idst2<NSIMD; idst2++)
-            {
-                if((idst+idst2)>idst_max)  break;                // ECL : If we surpass idst_max, we stop
-                if(skip_it_avx[idst2]>0)  continue;              //       Skipping "bad" pixels
-
-                dst[idst+idst2] = tmp2[idst2];                
-            }
            
         }
     }
