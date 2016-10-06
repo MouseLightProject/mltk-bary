@@ -300,7 +300,7 @@ static void worker(void *param) {
 
            // ECL : == Begin idx2coord ==
 
-	   ir1 = _mm256_set1_epi32(idst_max);
+           ir1 = _mm256_set1_epi32(idst_max);
            // ECL : ir0 is now a register with values n+NSIMD-1, n+NSIMD-2, ... , n+1, n 
            ir0 = _mm256_set_epi32(idst+7,idst+6,idst+5,idst+4,idst+3,idst+2,idst+1,idst); 
            // ECL : if n+k overflowed the bounds, round down to idst_max
@@ -393,8 +393,8 @@ static void worker(void *param) {
            // ECL : == Begin map ==
 
            r12 = _mm256_set1_ps(ori[0]); // ECL : Loading all variables
-	   r13 = _mm256_set1_ps(ori[1]); 
-	   r14 = _mm256_set1_ps(ori[2]); 
+           r13 = _mm256_set1_ps(ori[1]); 
+           r14 = _mm256_set1_ps(ori[2]); 
 
            r3  = _mm256_set1_ps(T[0]);
            r4  = _mm256_set1_ps(T[1]);
@@ -413,19 +413,19 @@ static void worker(void *param) {
            r14  = _mm256_sub_ps(r2,r14);
 
            r3  = _mm256_mul_ps(r12,r3);   //       r3 = T[0] * (src[0]-ori[0]) 
-	   r4  = _mm256_mul_ps(r13,r4);   //       r4 = T[1] * (src[1]-ori[1])
+           r4  = _mm256_mul_ps(r13,r4);   //       r4 = T[1] * (src[1]-ori[1])
            r3  = _mm256_add_ps(r3,r4);
            r5  = _mm256_mul_ps(r14,r5);   //       r5 = T[2] * (src[2]-ori[2])
            r3  = _mm256_add_ps(r3,r5);    //       r3 = r3 + r4 + r5 = lambda[0]
 
-	   r6  = _mm256_mul_ps(r12,r6);   //       r6 = T[3] * (src[0]-ori[0])
-	   r7  = _mm256_mul_ps(r13,r7);   //       r7 = T[4] * (src[1]-ori[1])
+           r6  = _mm256_mul_ps(r12,r6);   //       r6 = T[3] * (src[0]-ori[0])
+           r7  = _mm256_mul_ps(r13,r7);   //       r7 = T[4] * (src[1]-ori[1])
            r6  = _mm256_add_ps(r6,r7);
-	   r8  = _mm256_mul_ps(r14,r8);   //       r8 = T[5] * (src[2]-ori[2])
+           r8  = _mm256_mul_ps(r14,r8);   //       r8 = T[5] * (src[2]-ori[2])
            r6  = _mm256_add_ps(r6,r8);    //       lambda[1]
 
-	   r9  = _mm256_mul_ps(r12,r9);   //       r9 = T[6] * (src[0]-ori[0])
-	   r10 = _mm256_mul_ps(r13,r10);  //       r10= T[7] * (src[1]-ori[1])
+           r9  = _mm256_mul_ps(r12,r9);   //       r9 = T[6] * (src[0]-ori[0])
+           r10 = _mm256_mul_ps(r13,r10);  //       r10= T[7] * (src[1]-ori[1])
            r9  = _mm256_add_ps(r9,r10);  
            r11 = _mm256_mul_ps(r14,r11);  //       r11= T[8] * (src[2]-ori[2])
            r9  = _mm256_add_ps(r9,r11);   //       lambda[2]
@@ -478,8 +478,8 @@ static void worker(void *param) {
             ir4 = _mm256_max_epi32(ir4,ir5);        //       Because of the order we are going in (1 to 4), 
                                                     //    we want the largest numbers. (ie if ir4[n] initialy 
                                                     //    had 1 stored, but ir5[n] had 2, this would 
-	                                            //    indicate that lambda[1] had a lower value than lambda[0],
-	                                            //    so we would now store 2 in ir4[n].
+                                                    //    indicate that lambda[1] had a lower value than lambda[0],
+                                                    //    so we would now store 2 in ir4[n].
 
             r5  = _mm256_cmp_ps(r9,r15,_CMP_LT_OQ); // ECL : Same logic as above
             r15 = _mm256_min_ps(r9,r15);
@@ -591,14 +591,14 @@ static void worker(void *param) {
             r5  = _mm256_mul_ps(r2,r5);    //       r5 = T[2] * (src[2]-ori[2])
             r3  = _mm256_add_ps(r3,r5);    //       r3 = r3 + r4 + r5 = lambda[0]
 
-	    r6  = _mm256_mul_ps(r0,r6);    //       r6 = T[3] * (src[0]-ori[0])
-	    r7  = _mm256_mul_ps(r1,r7);    //       r7 = T[4] * (src[1]-ori[1])
+            r6  = _mm256_mul_ps(r0,r6);    //       r6 = T[3] * (src[0]-ori[0])
+            r7  = _mm256_mul_ps(r1,r7);    //       r7 = T[4] * (src[1]-ori[1])
             r6  = _mm256_add_ps(r6,r7);
-	    r8  = _mm256_mul_ps(r2,r8);    //       r8 = T[5] * (src[2]-ori[2])
+            r8  = _mm256_mul_ps(r2,r8);    //       r8 = T[5] * (src[2]-ori[2])
             r6  = _mm256_add_ps(r6,r8);    //       r6 =  lambda[1]
 
-	    r9  = _mm256_mul_ps(r0,r9);    //       r9 = T[6] * (src[0]-ori[0])
-	    r10 = _mm256_mul_ps(r1,r10);   //       r10= T[7] * (src[1]-ori[1])
+            r9  = _mm256_mul_ps(r0,r9);    //       r9 = T[6] * (src[0]-ori[0])
+            r10 = _mm256_mul_ps(r1,r10);   //       r10= T[7] * (src[1]-ori[1])
             r9  = _mm256_add_ps(r9,r10);  
             r11 = _mm256_mul_ps(r2,r11);   //       r11= T[8] * (src[2]-ori[2])
             r9  = _mm256_add_ps(r9,r11);   //       r9 = lambda[2]

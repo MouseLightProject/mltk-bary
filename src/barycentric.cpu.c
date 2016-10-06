@@ -306,62 +306,62 @@ static void worker(void *param) {
             
             #ifdef VERBOSE_CPU
             
-	    printf("===========================================Next call to for loop, i = %i=======================================\n", idst);
+            printf("===========================================Next call to for loop, i = %i=======================================\n", idst);
             unsigned i;
-	    printf("------------------r before idx2coord-----------------\n--r[] = ");
-	    for(i=0; i < 3; i++) printf("%f, ", r[i]);
-	    printf("\n-----------------------------------------------------\n");
-	    
-	    printf("-----------------idst before idx2coord---------------\n--idst = %i", idst);
-	    printf("\n-----------------------------------------------------\n");
+            printf("------------------r before idx2coord-----------------\n--r[] = ");
+            for(i=0; i < 3; i++) printf("%f, ", r[i]);
+            printf("\n-----------------------------------------------------\n");
             
- 	    #endif
-	    idx2coord(r,idst,dst_shape);
-	    #ifdef VERBOSE_CPU
-	    
-	    printf("------------------r after idx2coord------------------\n--r[] = ");
-	    for(i=0; i < 3; i++) printf("%f, ", r[i]);
-	    printf("\n-----------------------------------------------------\n");
-	    
-	    printf("-----------------idst before idx2coord---------------\n--idst = %i", idst);
-	    printf("\n-----------------------------------------------------\n");
-	   
-	    #endif
+            printf("-----------------idst before idx2coord---------------\n--idst = %i", idst);
+            printf("\n-----------------------------------------------------\n");
+            
+             #endif
+            idx2coord(r,idst,dst_shape);
+            #ifdef VERBOSE_CPU
+            
+            printf("------------------r after idx2coord------------------\n--r[] = ");
+            for(i=0; i < 3; i++) printf("%f, ", r[i]);
+            printf("\n-----------------------------------------------------\n");
+            
+            printf("-----------------idst before idx2coord---------------\n--idst = %i", idst);
+            printf("\n-----------------------------------------------------\n");
+           
+            #endif
             
             map(tetrads,lambdas,r);             // Map center tetrahedron
           
-	    //printf("lambdas[0] = %f\n", lambdas[0]);
-	    //printf("lambdas[1] = %f\n", lambdas[1]);
-	    //printf("lambdas[2] = %f\n", lambdas[2]);
-	    //printf("lambdas[3] = %f\n", lambdas[3]);
-	     
-	    #ifdef VERBOSE_CPU
-	    
-	    printf("--------------lambdas after initial map--------------\n--lambdas[] = ");
-	    for(i=0; i < 4; i++) printf("%f, ", lambdas[i]);
-	    printf("\n-----------------------------------------------------\n");
-	    
-	    #endif
+            //printf("lambdas[0] = %f\n", lambdas[0]);
+            //printf("lambdas[1] = %f\n", lambdas[1]);
+            //printf("lambdas[2] = %f\n", lambdas[2]);
+            //printf("lambdas[3] = %f\n", lambdas[3]);
+             
+            #ifdef VERBOSE_CPU
+            
+            printf("--------------lambdas after initial map--------------\n--lambdas[] = ");
+            for(i=0; i < 4; i++) printf("%f, ", lambdas[i]);
+            printf("\n-----------------------------------------------------\n");
+            
+            #endif
 
             itetrad=find_best_tetrad(lambdas);
-	    
-	    #ifdef VERBOSE_CPU
-	    printf("------------iterad after find_best_tetrad------------\n--itetrad = %i", itetrad);
-	    printf("\n-----------------------------------------------------\n");
-	    #endif
+            
+            #ifdef VERBOSE_CPU
+            printf("------------iterad after find_best_tetrad------------\n--itetrad = %i", itetrad);
+            printf("\n-----------------------------------------------------\n");
+            #endif
             /*
             if(eightCounter < 8) {
                 eightBlock[eightCounter] = itetrad;
                 eightCounter++;
             }
             else {
-		int seen[5] = {1, 1, 1, 1, 1};
+                int seen[5] = {1, 1, 1, 1, 1};
                 unsigned tets,i;
-		tets = 0;
+                tets = 0;
                 for(i=0; i < 8; i++) {
                     if(seen[eightBlock[i]] == 1) seen[eightBlock[i]] = 0;
                 }
-		for(i=0; i < 5; i++) {
+                for(i=0; i < 5; i++) {
                     if(seen[i]==0) tets++;
                 }
                 if(tets == 1) {
@@ -373,33 +373,33 @@ static void worker(void *param) {
                 } else { printf("tets =  %i?", tets); ASSERT(1>2);}
                 
                 eightCounter = 0;
-		eightBlock[eightCounter] = itetrad;
+                eightBlock[eightCounter] = itetrad;
                 eightCounter++;
             }
             */ 
             if(itetrad>0) {
-		
-	        #ifdef VERBOSE_CPU
-		printf("!!!!-itetrad was > 0, (itetrad = %i), so reruning map-\n",itetrad);
-	     	printf("--running map on %i\n", tetrads+itetrad);	
-	        #endif
+                
+                #ifdef VERBOSE_CPU
+                printf("!!!!-itetrad was > 0, (itetrad = %i), so reruning map-\n",itetrad);
+                     printf("--running map on %i\n", tetrads+itetrad);        
+                #endif
                 map(tetrads+itetrad,lambdas,r);   // Map best tetrahedron
-		
-	        #ifdef VERBOSE_CPU
-	    	printf("----------------lambdas after second map-------------\n--lambdas[] = ");
-	    	for(i=0; i < 4; i++) printf("%f, ", lambdas[i]);
-	    	printf("\n-----------------------------------------------------\n");
-	        #endif
-            	
-	    }
+                
+                #ifdef VERBOSE_CPU
+                    printf("----------------lambdas after second map-------------\n--lambdas[] = ");
+                    for(i=0; i < 4; i++) printf("%f, ", lambdas[i]);
+                    printf("\n-----------------------------------------------------\n");
+                #endif
+                    
+            }
             
             if(any_less_than_zero(lambdas,4)) { // other boundary
-		
-	        #ifdef VERBOSE_CPU
-		printf("!!!!-------a lambda was less than 0, continuing------\n",itetrad);
-	        #endif
+                
+                #ifdef VERBOSE_CPU
+                printf("!!!!-------a lambda was less than 0, continuing------\n",itetrad);
+                #endif
                 continue;
-	    }
+            }
 
             // Map source index
             {
@@ -440,7 +440,7 @@ static void worker(void *param) {
             }
 
         }
-	//printf("\n--------\n-number of cases where 8 consecutive pixels were in \n\t-[the same tetrad = %i]\n\t-[two separate tetrads = %i]\n\t-[three or more tetrads = %i]\n-out of %i cases \n--------\n\n",oneTetrahedron, twoTetrahedron, threeTetrahedron, 786432);
+        //printf("\n--------\n-number of cases where 8 consecutive pixels were in \n\t-[the same tetrad = %i]\n\t-[two separate tetrads = %i]\n\t-[three or more tetrads = %i]\n-out of %i cases \n--------\n\n",oneTetrahedron, twoTetrahedron, threeTetrahedron, 786432);
     }
 }
 
