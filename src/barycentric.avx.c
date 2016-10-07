@@ -448,10 +448,10 @@ static void worker(void *param) {
               r[1] = r_avx[1][n];
               r[2] = r_avx[2][n];
               map(tetrads, lambdas, r);
-              if(lambdas[0] != lambdas_avx[0][n] ||
-                 lambdas[1] != lambdas_avx[1][n] ||
-                 lambdas[2] != lambdas_avx[2][n] ||
-                 lambdas[3] != lambdas_avx[3][n]) 
+              if(fabs(lambdas[0]-lambdas_avx[0][n])>1e-6 ||
+                 fabs(lambdas[1]-lambdas_avx[1][n])>1e-6 ||
+                 fabs(lambdas[2]-lambdas_avx[2][n])>1e-6 ||
+                 fabs(lambdas[3]-lambdas_avx[3][n])>1e-6) 
                  printf("ERROR: \n\t\t\t\t\tlambdas     =  %.10f,  %.10f,  %.10f,  %.10f\n\
                                   \tlambdas_avx =  %.10f,  %.10f,  %.10f,  %.10f\n\
                                   \tdiff        =  %.10f,  %.10f,  %.10f,  %.10f\n\n",
@@ -496,8 +496,8 @@ static void worker(void *param) {
             ir4 = _mm256_max_epi32(ir4,ir5);
 
             // ECL : This block just removes any positive values, so if there were no negative 
-            // numbers for a particular n, itetrad[n] would be 0. -EPS accounts for floating point precision errors
-            r7  = _mm256_set1_ps(-EPS);            
+            // numbers for a particular n, itetrad[n] would be 0.
+            r7  = _mm256_set1_ps(0.0f);   // BJA:  ECL had an -EPS here
             r5  = _mm256_cmp_ps(r15,r7,_CMP_LT_OQ);
             ir5 = _mm256_castps_si256(r5);
             ir4 = _mm256_and_si256(ir4,ir5);
