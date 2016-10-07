@@ -292,101 +292,123 @@ static void worker(void *param) {
         const float d2 = 1.0f/dst_shape[1]; 
         const float d3 = 1.0f/dst_shape[2];
         unsigned n;
+
+        const unsigned N = 32;
+        unsigned l[2], sh1[2], sh2[2];
+        long long mp[2];
+        for (n=0; n<2; n++) {
+          l[n] = (unsigned)ceilf(log2f((float)dst_shape[n]));
+          mp[n] = (long long)(floor((2ll<<(N-1))*((2<<(l[n]-1))-dst_shape[n])/(double)dst_shape[n])+1.0);
+          sh1[n] = l[n]<1 ? l[n] : 1;
+          sh2[n] = (l[n]-1)>0 ? (l[n]-1) : 0; }
         
         __m256   r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15;
         __m256i ir0,ir1,ir2,ir3,ir4,ir5,ir6,ir7,ir8,ir9,ir10,ir11,ir12,ir13,ir14,ir15;
         for(idst=work->id;idst<idst_max;idst+=(NTHREADS*NSIMD)) {
 
+           // BJA : == Begin idx2coord ==
+           // modulus with integer division.  see granlund and montgomery (1994)
 
-           // ECL : == Begin idx2coord ==
+           // idst2 = div(idst, dst_shape[0])
+           ir1 = _mm256_set1_epi64x(mp[0]);
+           ir3 = _mm256_set_epi64x(idst+6,idst+4,idst+2,idst+0);  // idst
+           ir4 = _mm256_set_epi64x(idst+7,idst+5,idst+3,idst+1); 
+           ir5 = _mm256_mul_epu32(ir1,ir3);
+           ir6 = _mm256_mul_epu32(ir1,ir4);
+           ir5 = _mm256_srli_epi64(ir5,N);  // t1
+           ir6 = _mm256_srli_epi64(ir6,N);
+           ir7 = _mm256_sub_epi64(ir3,ir5);
+           ir8 = _mm256_sub_epi64(ir4,ir6);
+           ir7 = _mm256_srli_epi64(ir7,sh1[0]);
+           ir8 = _mm256_srli_epi64(ir8,sh1[0]);
+           ir7 = _mm256_add_epi64(ir7,ir5);
+           ir8 = _mm256_add_epi64(ir8,ir6);
+           ir7 = _mm256_srli_epi64(ir7,sh2[0]);  // idst2
+           ir8 = _mm256_srli_epi64(ir8,sh2[0]);
 
-           ir1 = _mm256_set1_epi32(idst_max);
-           // ECL : ir0 is now a register with values n+NSIMD-1, n+NSIMD-2, ... , n+1, n 
-           ir0 = _mm256_set_epi32(idst+7,idst+6,idst+5,idst+4,idst+3,idst+2,idst+1,idst); 
-           // ECL : if n+k overflowed the bounds, round down to idst_max
-           ir0 = _mm256_min_epi32(ir0, ir1);
-           
-           r3  = _mm256_set1_ps((float)(dst_shape[0]));
-           r4  = _mm256_set1_ps((float)(dst_shape[1]));
-           r5  = _mm256_set1_ps((float)(dst_shape[2]));
+           // r[0] = idst - idst2 * dst_shape[0]
+           ir5 = _mm256_set1_epi64x(dst_shape[0]);
+           ir0 = _mm256_mul_epu32(ir7,ir5);
+           ir1 = _mm256_mul_epu32(ir8,ir5);
+           ir0 = _mm256_sub_epi64(ir3,ir0);  // r[0]
+           ir1 = _mm256_sub_epi64(ir4,ir1);
 
-           // ECL : d1-d3 are divisors that 
-           //     are computed before the loop
-           r13 = _mm256_set1_ps(d1);
-           r14 = _mm256_set1_ps(d2);
-           r15 = _mm256_set1_ps(d3);
+           // r[2] = div(idst2, dst_shape[1])
+           ir2 = _mm256_set1_epi64x(mp[1]);
+           ir9 = _mm256_mul_epu32(ir2,ir7);
+           ir10= _mm256_mul_epu32(ir2,ir8);
+           ir9 = _mm256_srli_epi64(ir9,N);  // t1
+           ir10= _mm256_srli_epi64(ir10,N);
+           ir4 = _mm256_sub_epi64(ir7,ir9);
+           ir5 = _mm256_sub_epi64(ir8,ir10);
+           ir4 = _mm256_srli_epi64(ir4,sh1[1]);
+           ir5 = _mm256_srli_epi64(ir5,sh1[1]);
+           ir4 = _mm256_add_epi64(ir4,ir9);
+           ir5 = _mm256_add_epi64(ir5,ir10);
+           ir4 = _mm256_srli_epi64(ir4,sh2[1]);  // r[2]
+           ir5 = _mm256_srli_epi64(ir5,sh2[1]);
 
-           // ECL : We will now do a mod b by calculating a - floor(a/b) * b
-           //     For the first set of calculations,
-           //     a = idst, b = shape[0] 
+           // r[1] = idst2 - r[2] * dst_shape[1]
+           ir6 = _mm256_set1_epi64x(dst_shape[1]);
+           ir2 = _mm256_mul_epu32(ir4,ir6);
+           ir3 = _mm256_mul_epu32(ir5,ir6);
+           ir2 = _mm256_sub_epi64(ir7,ir2);
+           ir3 = _mm256_sub_epi64(ir8,ir3);
 
-           r6  = _mm256_cvtepi32_ps(ir0);      // ECL : r6 = a
-           r8  = _mm256_mul_ps(r6, r13);       //       r8 = b
-           r8  = _mm256_floor_ps(r8);          //       r8 = floor(a/b) - kept as r8 
-                                               //    r8 will be "a" in the next set of calculations
-           r7  = _mm256_mul_ps(r8, r3);        //       r7 = b * floor(a/b)
-           ir1 = _mm256_cvtps_epi32(r7);       //       Converting r7 from floats to integers 
-                                               //    in order to combat some rounding errors
-           ir1 = _mm256_sub_epi32(ir0, ir1);   //       ir1 = a - b*floor(a/b)
+           ir1 = _mm256_slli_epi64(ir1,N);
+           ir3 = _mm256_slli_epi64(ir3,N);
+           ir5 = _mm256_slli_epi64(ir5,N);
+           ir0 = _mm256_blend_epi32(ir0,ir1,0b10101010);
+           ir1 = _mm256_blend_epi32(ir2,ir3,0b10101010);
+           ir2 = _mm256_blend_epi32(ir4,ir5,0b10101010);
+           r0  = _mm256_cvtepi32_ps(ir0);
+           r1  = _mm256_cvtepi32_ps(ir1);
+           r2  = _mm256_cvtepi32_ps(ir2);
 
-           // ECL : The floating point division above would still often return off-by-one errors 
-           //     when idst > 16 mil. We therefore manually correct our results. This only seems
-           //     to be neccessary for the first set of equations.
-          
-           ir2 = _mm256_setzero_si256();       // ECL : ir2 = 0
-           ir3 = _mm256_set1_epi32(1);         //       ir3 = 1
-           ir4 = _mm256_cmpgt_epi32(ir2, ir1); //       ir4 holds 1's where a number was negative
-           ir5 = _mm256_and_si256(ir4, ir3);   //       r8 -= 1 where a modulo was negative
-           r8  = _mm256_sub_ps(r8, _mm256_cvtepi32_ps(ir5));
-                                               // ECL : ir1 += b
-           ir6 = _mm256_and_si256(ir4, _mm256_set1_epi32(dst_shape[0]));
-           ir1 = _mm256_add_epi32(ir1, ir6);
+           /* test code for idx2coord
+           unsigned ALIGN foo[3][8];
+           _mm256_store_si256(foo[0],ir0);
+           _mm256_store_si256(foo[1],ir1);
+           _mm256_store_si256(foo[2],ir2);
+           printf("\tl[0]=%u\n\tmp[0]=%u\n\tsh1[0]=%u\n\tsh2[0]=%u\n",l[0],mp[0],sh1[0],sh2[0]);
+           printf("\tl[1]=%u\n\tmp[1]=%u\n\tsh1[1]=%u\n\tsh2[1]=%u\n",l[1],mp[1],sh1[1],sh2[1]);
+           printf("\tidst  = %u\n\tshape = %i, %i, %i\n", idst, dst_shape[0], dst_shape[1], dst_shape[2]);
+           for(n=0; n<8; n++)
+                 printf("\tr7 = %d\tr8 = %d\tr8 = %d\n", foo[0][n],foo[1][n],foo[2][n]);
+           exit(0);
+           */
 
-           // ECL : Same as above, but check for greater than b
-           ir4 = _mm256_cmpgt_epi32(ir1, _mm256_set1_epi32(dst_shape[0]));
-           ir5 = _mm256_and_si256(ir4, ir3);
-           r8  = _mm256_add_ps(r8, _mm256_cvtepi32_ps(ir5));
-           ir6 = _mm256_and_si256(ir4, _mm256_set1_epi32(dst_shape[0]));
-           ir1 = _mm256_sub_epi32(ir1, ir6);
+           /* the slow easy way to compute idx2coord using the CPU
+           for(n=0; n < NSIMD; n++) { 
+               idx2coord(r, MIN(idst_max, idst+n), dst_shape);
+               r_avx[0][n]=r[0];
+               r_avx[1][n]=r[1];
+               r_avx[2][n]=r[2]; }
+           r0  = _mm256_load_ps(r_avx[0]);
+           r1  = _mm256_load_ps(r_avx[1]);
+           r2  = _mm256_load_ps(r_avx[2]);
+           */
 
-                                            
-           r0  = _mm256_cvtepi32_ps(ir1);     
-           
-           // ECL : Logic follows the first set of equations, taking floor(a/b) to be the next "a".
-           //     In the first set, we use the saved r8 as "a"
-            
-           r7  = _mm256_mul_ps(r8,r14);
-           r6  = _mm256_floor_ps(r7);
-           r7  = _mm256_mul_ps(r6,r4);
-           ir0 = _mm256_cvtps_epi32(r8);
-           ir1 = _mm256_cvtps_epi32(r7);
-           ir1 = _mm256_sub_epi32(ir0,ir1);
-           r1  =_mm256_cvtepi32_ps(ir1);
+           // BJA : == End idx2coord ==
 
-           r7  = _mm256_mul_ps(r6,r15);
-           r8  = _mm256_floor_ps(r7);
-           r7  = _mm256_mul_ps(r8,r5);
-           ir0 = _mm256_cvtps_epi32(r6);
-           ir1 = _mm256_cvtps_epi32(r7);
-           ir1 = _mm256_sub_epi32(ir0,ir1);
-           r2  = _mm256_cvtepi32_ps(ir1);
-           
-           // ECL : == End idx2coord ==
-           
-             
            #ifdef TEST_AVX                     // ECL : Test the avx idx2coord against cpu version
            
            _mm256_store_ps(r_avx[0],r0);
            _mm256_store_ps(r_avx[1],r1);
            _mm256_store_ps(r_avx[2],r2);
            for(n=0; n < NSIMD; n++) { 
-              idx2coord(r, MIN(idst_max, idst+n), dst_shape);
-              if(r[0] != r_avx[0][n] ||
-                 r[1] != r_avx[1][n] ||
-                 r[2] != r_avx[2][n]) printf("ERROR: \n\tr     = %i, %i, %i\n\tr_avx = %i, %i, %i\n\n",
-                                                 r[0],       r[1],       r[2],
-                                             r_avx[0][n],r_avx[1][n],r_avx[2][n]);
-           } 
+               idx2coord(r, MIN(idst_max, idst+n), dst_shape);
+               if(r[0] != r_avx[0][n] || r[1] != r_avx[1][n] || r[2] != r_avx[2][n]) {
+                   printf("ERROR: \n");
+                   printf("\tl[0]=%u\n\tmp[0]=%u\n\tsh1[0]=%u\n\tsh2[0]=%u\n",l[0],mp[0],sh1[0],sh2[0]);
+                   printf("\tl[1]=%u\n\tmp[1]=%u\n\tsh1[1]=%u\n\tsh2[1]=%u\n",l[1],mp[1],sh1[1],sh2[1]);
+                   printf("\tidst  = %u\n\tshape = %i, %i, %i\n\tr     = %f, %f, %f\n\tr_avx = %f, %f, %f\n\n",
+                          idst+n,
+                          dst_shape[0], dst_shape[1], dst_shape[2], 
+                          r[0],       r[1],       r[2],
+                          r_avx[0][n],r_avx[1][n],r_avx[2][n]);
+                   exit(0); }
+           }
            #endif
 
 
