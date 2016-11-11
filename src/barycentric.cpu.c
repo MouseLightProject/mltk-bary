@@ -150,8 +150,8 @@ static void idx2coord(float * restrict r,unsigned idx,const unsigned * const res
 
 struct ctx {
     TPixel *src,*dst;
-    unsigned src_shape[3],dst_shape[3];
-    unsigned src_strides[4],dst_strides[4];
+    unsigned src_shape[4],dst_shape[4];
+    unsigned src_strides[5],dst_strides[5];
 };
 
 int BarycentricCPUinit(struct resampler* self,
@@ -159,22 +159,22 @@ int BarycentricCPUinit(struct resampler* self,
                 const unsigned * const dst_shape,
                 const unsigned ndim
                ) {
-    ASSERT(ndim==3);
+    ASSERT(ndim==4);  //transform is done in 3D and replicated across the 4th
     memset(self,0,sizeof(*self));
     ASSERT(self->ctx=(struct ctx*)malloc(sizeof(struct ctx)));
     {
         struct ctx * const c=self->ctx;
         //memset(c,0,sizeof(*c));
         memcpy(c->src_shape,src_shape,sizeof(c->src_shape));
-        cumprod(c->src_strides,src_shape,3);
+        cumprod(c->src_strides,src_shape,4);
         // src just ref'd: no alloc
     }
     {
         struct ctx * const c=self->ctx;
         //memset(c,0,sizeof(*c));
         memcpy(c->dst_shape,dst_shape,sizeof(c->dst_shape));
-        cumprod(c->dst_strides,dst_shape,3);
-        ASSERT(c->dst=(TPixel*)malloc(c->dst_strides[3]*sizeof(TPixel)));
+        cumprod(c->dst_strides,dst_shape,4);
+        ASSERT(c->dst=(TPixel*)malloc(c->dst_strides[4]*sizeof(TPixel)));
     }
     return 1;
 }
@@ -200,7 +200,7 @@ int BarycentricCPUsource(const struct resampler * self,
 int BarycentricCPUdestination(struct resampler *self,
                        TPixel * const dst){
     struct ctx * const c=self->ctx;
-    memcpy(c->dst,dst,c->dst_strides[3]*sizeof(TPixel));
+    memcpy(c->dst,dst,c->dst_strides[4]*sizeof(TPixel));
     return 1;
  }
 
@@ -208,7 +208,7 @@ int BarycentricCPUresult(const struct resampler * const self,
                   TPixel * const dst)
 {
     struct ctx * const ctx=self->ctx;
-    memcpy(dst,ctx->dst,ctx->dst_strides[3]*sizeof(TPixel));
+    memcpy(dst,ctx->dst,ctx->dst_strides[4]*sizeof(TPixel));
     return 1;
 }
 
@@ -260,7 +260,7 @@ void fracPixelValues(float * s, const float lambdas[4], const unsigned itetrad, 
                             Bit 1 is the y dimension, and bit 2 the z dimension.
 */
 
-#define NTHREADS (6) 
+#define NTHREADS (8) 
 //#define VERBOSE_CPU
 struct work {
     TPixel *  restrict dst;
@@ -306,7 +306,7 @@ static void worker(void *param) {
             
             #ifdef VERBOSE_CPU
             
-            printf("===========================================Next call to for loop, i = %i=======================================\n", idst);
+            printf("==========================Next call to for loop, i = %i======================\n", idst);
             unsigned i;
             printf("------------------r before idx2coord-----------------\n--r[] = ");
             for(i=0; i < 3; i++) printf("%f, ", r[i]);
@@ -404,17 +404,23 @@ static void worker(void *param) {
             // Map source index
             {
                 float s[3];
+                unsigned i4, i4src, i4dst;
                 fracPixelValues(s, lambdas, itetrad, src_shape);
                 if(method==0) { //  nathan's original nearest neighbor
                   unsigned isrc=0;
                   isrc+=src_strides[0]*((unsigned)s[0]); // important to floor here.  can't change order of sums
                   isrc+=src_strides[1]*((unsigned)s[1]);
                   isrc+=src_strides[2]*((unsigned)s[2]); 
-                  dst[idst]=src[isrc]; }
+                  for(i4=0; i4<dst_shape[3]; i4++) {
+                    i4src=i4*src_strides[3];
+                    i4dst=i4*dst_strides[3];
+                    dst[idst+i4dst]=src[isrc+i4src]; } }
 
                 else if(method==1) { // ben's trilinear
-                  float frac[3],tmp,c00,c10,c01,c11,c0,c1;
+                  float frac[3],remfrac[3],tmp,c00,c10,c01,c11,c0,c1;
                   unsigned zero[3],one[3], i;
+                  unsigned c00a, c00b, c10a, c10b, c01a, c01b, c11a, c11b;
+                  unsigned z0, z1, z2, o0, o1, o2;
                   for(i = 0; i < 3; i++) {
                     frac[i] = modff(s[i],&tmp);
                     zero[i]=(unsigned)tmp;
@@ -424,19 +430,33 @@ static void worker(void *param) {
                   if(one[0]>=src_shape[0]) one[0]--;  // otherwise pixels are black at edges, not sure why
                   if(one[1]>=src_shape[1]) one[1]--;
                   if(one[2]>=src_shape[2]) one[2]--;
-                  tmp = (1.0f-frac[0]);
-                  c00 = src[zero[0]*src_strides[0]+zero[1]*src_strides[1]+zero[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+zero[1]*src_strides[1]+zero[2]*src_strides[2]]*frac[0];
-                  c10 = src[zero[0]*src_strides[0]+ one[1]*src_strides[1]+zero[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+ one[1]*src_strides[1]+zero[2]*src_strides[2]]*frac[0];
-                  c01 = src[zero[0]*src_strides[0]+zero[1]*src_strides[1]+ one[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+zero[1]*src_strides[1]+ one[2]*src_strides[2]]*frac[0];
-                  c11 = src[zero[0]*src_strides[0]+ one[1]*src_strides[1]+ one[2]*src_strides[2]]*tmp
-                      + src[ one[0]*src_strides[0]+ one[1]*src_strides[1]+ one[2]*src_strides[2]]*frac[0];
-                  tmp = (1.0f-frac[1]);
-                  c0 = c00*tmp + c10*frac[1];
-                  c1 = c01*tmp + c11*frac[1];
-                  dst[idst] = c0*(1.0f-frac[2]) + c1*frac[2]; }
+                  remfrac[0] = (1.0f-frac[0]);
+                  remfrac[1] = (1.0f-frac[1]);
+                  remfrac[2] = (1.0f-frac[2]);
+                  z0 = zero[0]*src_strides[0];
+                  z1 = zero[1]*src_strides[1];
+                  z2 = zero[2]*src_strides[2];
+                  o0 =  one[0]*src_strides[0];
+                  o1 =  one[1]*src_strides[1];
+                  o2 =  one[2]*src_strides[2];
+                  c00a = z0+z1+z2;
+                  c00b = o0+z1+z2;
+                  c10a = z0+o1+z2;
+                  c10b = o0+o1+z2;
+                  c01a = z0+z1+o2;
+                  c01b = o0+z1+o2;
+                  c11a = z0+o1+o2;
+                  c11b = o0+o1+o2;
+                  for(i4=0; i4<dst_shape[3]; i4++) {
+                    i4src=i4*src_strides[3];
+                    i4dst=i4*dst_strides[3];
+                    c00 = src[c00a+i4src]*remfrac[0] + src[c00b+i4src]*frac[0];
+                    c10 = src[c10a+i4src]*remfrac[0] + src[c10b+i4src]*frac[0];
+                    c01 = src[c01a+i4src]*remfrac[0] + src[c01b+i4src]*frac[0];
+                    c11 = src[c11a+i4src]*remfrac[0] + src[c11b+i4src]*frac[0];
+                    c0 = c00*remfrac[1] + c10*frac[1];
+                    c1 = c01*remfrac[1] + c11*frac[1];
+                    dst[idst+i4dst] = c0*remfrac[2] + c1*frac[2]; } }
             }
 
         }
