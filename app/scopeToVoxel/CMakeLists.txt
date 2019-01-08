@@ -16,18 +16,19 @@ add_executable(scopeToVoxel scopeToVoxel.c ${PROJECT_SOURCE_DIR}/../tilebase/til
 
 link_directories(${CMAKE_INSTALL_PREFIX}/build/mltk-bary)
 
-find_library(TILEBASE_LIBRARY tilebase ${CMAKE_INSTALL_PREFIX}/tilebase)
+#find_library(TILEBASE_LIBRARY tilebase ${CMAKE_INSTALL_PREFIX}/tilebase)
 
 #add_dependencies(scopeToVoxel engine)
 
 target_add_engine(scopeToVoxel)
 
 
-target_link_libraries(scopeToVoxel ${TILEBASE_LIBRARY})
+#target_link_libraries(scopeToVoxel ${TILEBASE_LIBRARY})
+target_link_libraries(scopeToVoxel)
 #target_link_libraries(scopeToVoxel engine)
 #message("CMAKE INSTALL PREFIX = ${CMAKE_INSTALL_PREFIX}")
 
 
-nd_copy_plugins_to_target(scopeToVoxel ${plugins})
+#nd_copy_plugins_to_target(scopeToVoxel ${plugins})
 
 install(TARGETS scopeToVoxel DESTINATION ${CMAKE_INSTALL_PREFIX}/build/mltk-bary/bin)

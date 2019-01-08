@@ -8,8 +8,8 @@ include(cmake/show.cmake)
 include(cmake/ide.cmake)
 include(cmake/rpath.cmake)
 
-find_package(ND)
-include_directories(${ND_INCLUDE_DIRS})
+#find_package(ND)
+#include_directories(${ND_INCLUDE_DIRS})
 #;-Xptxas="-v"
 
 file(GLOB_RECURSE SRCS src/*.c src/*.h)
@@ -35,10 +35,10 @@ function(target_add_engine tgt)
     set_property(TARGET ${tgt} APPEND PROPERTY 
                  INCLUDE_DIRECTORIES ${ENGINE_DIR})
     target_link_libraries(${tgt} engine)
-    nd_add_to_target(${tgt} ndio-tiff)
+    #nd_add_to_target(${tgt} ndio-tiff)
 endfunction()
 
 include(CTest)
-enable_testing()
-add_subdirectory(test)
-add_subdirectory(app/scopeToVoxel)
+#enable_testing()
+#add_subdirectory(test)
+#add_subdirectory(app/scopeToVoxel)
